@@ -1,0 +1,2115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SDR / CS Route Planner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --navy: #0d1b2a;
+    --navy2: #162233;
+    --navy3: #1e2f42;
+    --amber: #f5a623;
+    --amber-dim: #c47d0e;
+    --csblue: #4fc3d9;
+    --text: #e8edf2;
+    --text-dim: #8a9bb0;
+    --border: #263548;
+    --danger: #e85a4f;
+    --success: #4fbf6f;
+    --transit: #a78bfa;
+    --sidebar-w: 320px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: var(--navy); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header { background: var(--navy2); border-bottom: 1px solid var(--border); padding: 0 16px; height: 48px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; z-index: 1000; }
+  .logo { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--amber); text-transform: uppercase; }
+  .logo span { color: var(--text-dim); font-weight: 400; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .btn-export { background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 5px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; letter-spacing: 1px; transition: all 0.2s; }
+  .btn-export:hover { border-color: var(--amber); color: var(--amber); }
+
+  .main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+  .sidebar { width: var(--sidebar-w); background: var(--navy2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  .sidebar-scroll { flex: 1; overflow-y: auto; padding: 12px; }
+  .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+  .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .section-label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); padding: 8px 4px 6px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+
+  .search-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .search-input { flex: 1; background: var(--navy3); border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 4px; font-size: 12px; outline: none; }
+  .search-input:focus { border-color: var(--amber); }
+  .search-input::placeholder { color: var(--text-dim); }
+  .btn-search { background: var(--amber); color: var(--navy); border: none; padding: 7px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .btn-search:hover { background: var(--amber-dim); }
+
+  .tile-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tile-btn { flex: 1; background: var(--navy3); border: 1px solid var(--border); color: var(--text-dim); padding: 6px 4px; border-radius: 4px; font-size: 10px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; letter-spacing: 0.5px; }
+  .tile-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(245,166,35,0.08); }
+  .tile-btn:hover:not(.active) { border-color: var(--text-dim); color: var(--text); }
+
+  .btn-new-route { width: 100%; background: transparent; border: 1px dashed var(--border); color: var(--text-dim); padding: 9px; border-radius: 5px; font-size: 11px; font-weight: 600; letter-spacing: 1px; cursor: pointer; transition: all 0.15s; margin-bottom: 10px; text-transform: uppercase; }
+  .btn-new-route:hover { border-color: var(--amber); color: var(--amber); background: rgba(245,166,35,0.05); }
+
+  /* ROUTE CARDS */
+  .route-card { background: var(--navy3); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 10px; overflow: hidden; transition: border-color 0.15s; }
+  .route-card.capturing { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(245,166,35,0.3); }
+  .route-card-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+
+  .route-colour-btn { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; position: relative; transition: border-color 0.15s; }
+  .route-colour-btn:hover { border-color: white; }
+  .colour-picker-popup { position: absolute; top: 24px; left: 0; z-index: 9999; background: var(--navy2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: flex; flex-wrap: wrap; gap: 5px; width: 130px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .colour-picker-popup.hidden { display: none; }
+  .cp-swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color 0.1s, transform 0.1s; }
+  .cp-swatch:hover { border-color: white; transform: scale(1.15); }
+  .cp-swatch.selected { border-color: white; }
+
+  .route-type-tag { font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; cursor: pointer; border: 1px solid currentColor; transition: opacity 0.15s; }
+  .route-type-tag:hover { opacity: 0.7; }
+
+  .route-name-input { flex: 1; background: transparent; border: none; color: var(--text); font-size: 12px; font-weight: 600; outline: none; min-width: 0; }
+  .route-name-input::placeholder { color: var(--text-dim); }
+
+  .route-capture-btn { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 3px 8px; border-radius: 3px; border: none; cursor: pointer; flex-shrink: 0; transition: all 0.15s; text-transform: uppercase; }
+  .route-capture-btn.idle { background: rgba(255,255,255,0.07); color: var(--text-dim); }
+  .route-capture-btn.idle:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+  .route-capture-btn.active { background: var(--amber); color: var(--navy); }
+  .route-capture-btn.step2 { background: var(--success); color: var(--navy); animation: pulse-btn 0.8s ease-in-out infinite; }
+  @keyframes pulse-btn { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+
+  .route-card-stats { padding: 5px 10px; font-size: 11px; color: var(--text-dim); }
+  .route-card-controls { padding: 6px 10px 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .mini-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 4px 8px; border-radius: 3px; font-size: 10px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .mini-btn:hover:not(:disabled) { border-color: var(--text); color: var(--text); }
+  .mini-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .mini-btn.active-edit { border-color: var(--amber); color: var(--amber); }
+  .mini-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .mini-select { background: var(--navy2); border: 1px solid var(--border); color: var(--text-dim); padding: 4px 6px; border-radius: 3px; font-size: 10px; cursor: pointer; outline: none; }
+  .route-notes-input { width: 100%; background: var(--navy2); border: none; border-top: 1px solid var(--border); color: var(--text-dim); padding: 6px 10px; font-size: 11px; resize: none; font-family: inherit; outline: none; min-height: 50px; }
+  .route-notes-input::placeholder { color: var(--border); }
+
+  /* WAYPOINT LIST */
+  .wp-list { padding: 4px 10px 6px; border-top: 1px solid var(--border); }
+  .wp-list-label { font-size: 9px; letter-spacing: 1.5px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; padding-top: 2px; }
+  .wp-item { display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: grab; user-select: none; border-radius: 3px; }
+  .wp-item:active { cursor: grabbing; }
+  .wp-item.drag-over { background: rgba(245,166,35,0.1); }
+  .wp-drag-handle { color: var(--text-dim); font-size: 12px; flex-shrink: 0; }
+  .wp-num { font-size: 10px; font-weight: 700; flex-shrink: 0; width: 14px; text-align: center; }
+  .wp-coords { font-size: 10px; color: var(--text-dim); flex: 1; font-family: monospace; }
+  .wp-mode-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 2px; flex-shrink: 0; text-transform: uppercase; }
+  .wp-mode-badge.driving { background: rgba(245,166,35,0.15); color: var(--amber); }
+  .wp-mode-badge.walking { background: rgba(79,191,111,0.15); color: var(--success); }
+  .wp-mode-badge.transit  { background: rgba(167,139,250,0.15); color: var(--transit); }
+  .wp-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 0 2px; }
+  .wp-del:hover { color: var(--danger); }
+
+  /* POINTS */
+  .point-item { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+  .point-item:last-child { border-bottom: none; }
+  .point-item:hover { background: rgba(255,255,255,0.03); }
+  .point-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .point-label { flex: 1; font-size: 11px; }
+  .point-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; opacity: 0.5; }
+  .point-del:hover { opacity: 1; color: var(--danger); }
+  .no-points { font-size: 11px; color: var(--text-dim); padding: 6px 4px; font-style: italic; }
+
+  .add-point-section { margin-bottom: 12px; }
+  .add-point-row { display: flex; gap: 6px; margin-bottom: 6px; }
+  .point-label-input { flex: 1; background: var(--navy3); border: 1px solid var(--border); color: var(--text); padding: 6px 8px; border-radius: 4px; font-size: 11px; outline: none; }
+  .point-label-input:focus { border-color: var(--amber); }
+  .point-label-input::placeholder { color: var(--text-dim); }
+  .color-row { display: flex; gap: 5px; flex-wrap: wrap; }
+  .color-swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s; }
+  .color-swatch.selected { border-color: white; }
+  .btn-add-point { width: 100%; background: transparent; border: 1px dashed var(--border); color: var(--text-dim); padding: 7px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: all 0.15s; margin-top: 4px; }
+  .btn-add-point:hover, .btn-add-point.active { border-color: var(--amber); color: var(--amber); background: rgba(245,166,35,0.05); }
+
+  /* STATUS BAR */
+  .status-bar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: var(--navy2); border: 1px solid var(--border); padding: 8px 16px; border-radius: 20px; font-size: 12px; color: var(--text); z-index: 999; pointer-events: none; display: none; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+  .status-bar.visible { display: block; }
+  .status-bar.error { border-color: var(--danger); color: var(--danger); }
+  .status-bar.capture { border-color: var(--amber); animation: pulse-border 1s ease-in-out infinite; }
+  @keyframes pulse-border { 0%,100% { box-shadow: 0 0 0 0 rgba(245,166,35,0.4); } 50% { box-shadow: 0 0 0 4px rgba(245,166,35,0); } }
+
+  /* TRANSPORT MODE MODAL */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+  .modal-backdrop.hidden { display: none; }
+  .modal { background: var(--navy2); border: 1px solid var(--border); border-radius: 10px; padding: 20px; width: 300px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); }
+  .modal-title { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
+  .modal-sub { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; }
+  .modal-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .modal-opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--navy3); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; transition: all 0.15s; }
+  .modal-opt:hover { border-color: var(--text-dim); background: rgba(255,255,255,0.04); }
+  .modal-opt-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
+  .modal-opt-text { flex: 1; }
+  .modal-opt-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .modal-opt-desc { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+  .modal-opt.driving:hover, .modal-opt.driving.selected { border-color: var(--amber); background: rgba(245,166,35,0.08); }
+  .modal-opt.walking:hover, .modal-opt.walking.selected { border-color: var(--success); background: rgba(79,191,111,0.08); }
+  .modal-opt.transit:hover, .modal-opt.transit.selected  { border-color: var(--transit); background: rgba(167,139,250,0.08); }
+  .modal-cancel { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 8px; border-radius: 5px; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+  .modal-cancel:hover { border-color: var(--danger); color: var(--danger); }
+
+  .map-wrap { flex: 1; position: relative; display: flex; flex-direction: column; min-height: 0; }
+  #map { flex: 1; height: 100%; min-height: 0; }
+  .leaflet-container { background: #0d1b2a; }
+
+  /* ========== THREAT OVERLAY PANEL ========== */
+  .threat-panel {
+    position: absolute; top: 10px; right: 10px; z-index: 900;
+    background: var(--navy2); border: 1px solid var(--border);
+    border-radius: 8px; width: 310px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    overflow: hidden; transition: all 0.2s;
+  }
+  .threat-panel.collapsed .threat-panel-body { display: none; }
+  .threat-panel-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; cursor: pointer;
+    border-bottom: 1px solid var(--border); user-select: none;
+  }
+  .threat-panel-header:hover { background: rgba(255,255,255,0.03); }
+  .threat-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex-shrink: 0; }
+  .threat-indicator.live { animation: threat-pulse 1.5s ease-in-out infinite; }
+  @keyframes threat-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(232,90,79,0.6); } 50% { box-shadow: 0 0 0 5px rgba(232,90,79,0); } }
+  .threat-panel-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; flex: 1; color: var(--text); }
+  .threat-live-badge { font-size: 9px; font-weight: 700; letter-spacing: 1px; padding: 2px 7px; border-radius: 10px; background: rgba(232,90,79,0.15); color: var(--danger); border: 1px solid var(--danger); display: none; animation: threat-pulse 1.5s ease-in-out infinite; white-space: nowrap; }
+  .threat-live-badge.active { display: inline; }
+  .threat-toggle-btn { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .threat-toggle-btn.on { border-color: var(--danger); color: var(--danger); background: rgba(232,90,79,0.1); }
+  .threat-toggle-btn:hover { border-color: var(--text); color: var(--text); }
+  .threat-panel-collapse { font-size: 10px; color: var(--text-dim); margin-left: 4px; }
+  .threat-panel-body { padding: 12px; }
+
+  /* Mode toggle tabs */
+  .threat-mode-tabs { display: flex; gap: 0; margin-bottom: 12px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
+  .threat-mode-tab { flex: 1; padding: 6px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; text-align: center; cursor: pointer; background: transparent; color: var(--text-dim); border: none; transition: all 0.15s; }
+  .threat-mode-tab.active { background: var(--navy3); color: var(--text); }
+  .threat-mode-tab:first-child { border-right: 1px solid var(--border); }
+
+  /* Mode sections */
+  .threat-mode-section { display: none; }
+  .threat-mode-section.visible { display: block; }
+
+  /* Scope toggle */
+  .threat-scope-row { display: flex; gap: 5px; margin-bottom: 10px; }
+  .threat-scope-btn { flex: 1; padding: 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; text-align: center; cursor: pointer; background: var(--navy3); border: 1px solid var(--border); color: var(--text-dim); border-radius: 4px; transition: all 0.15s; }
+  .threat-scope-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(245,166,35,0.08); }
+
+  /* Live mode controls */
+  .threat-live-controls { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+  .threat-live-start-btn { flex: 1; padding: 7px; border-radius: 5px; border: 1px solid var(--success); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; background: rgba(79,191,111,0.1); color: var(--success); transition: all 0.15s; }
+  .threat-live-start-btn:hover { background: rgba(79,191,111,0.2); }
+  .threat-live-start-btn.running { border-color: var(--danger); color: var(--danger); background: rgba(232,90,79,0.1); }
+  .threat-live-start-btn.running:hover { background: rgba(232,90,79,0.2); }
+  .threat-live-countdown { font-size: 10px; color: var(--text-dim); font-family: monospace; white-space: nowrap; }
+
+  /* Input / filter shared */
+  .threat-input {
+    width: 100%; background: var(--navy3); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 8px; border-radius: 4px; font-size: 11px;
+    outline: none; font-family: inherit;
+  }
+  .threat-input:focus { border-color: var(--amber); }
+  .threat-input::placeholder { color: var(--text-dim); }
+  .threat-filter-label { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; margin-top: 8px; }
+  .threat-filter-grid { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .threat-filter-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px; cursor: pointer; transition: background 0.1s; }
+  .threat-filter-row:hover { background: rgba(255,255,255,0.04); }
+  .threat-filter-row input[type=checkbox] { accent-color: var(--danger); width: 13px; height: 13px; flex-shrink: 0; cursor: pointer; }
+  .threat-filter-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .threat-filter-name { font-size: 11px; flex: 1; }
+  .threat-filter-count { font-size: 10px; color: var(--text-dim); font-family: monospace; }
+  .threat-date-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+  .threat-date-input { flex: 1; background: var(--navy3); border: 1px solid var(--border); color: var(--text); padding: 5px 7px; border-radius: 4px; font-size: 10px; outline: none; color-scheme: dark; }
+  .threat-date-input:focus { border-color: var(--amber); }
+  .threat-date-sep { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+  .threat-fetch-btn {
+    width: 100%; padding: 8px; border-radius: 5px; border: none;
+    font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    cursor: pointer; transition: all 0.15s; margin-bottom: 8px;
+    background: var(--danger); color: white;
+  }
+  .threat-fetch-btn:hover { opacity: 0.85; }
+  .threat-fetch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .threat-status { font-size: 10px; color: var(--text-dim); text-align: center; padding: 3px 0; min-height: 16px; }
+  .threat-status.err { color: var(--danger); }
+  .threat-status.ok  { color: var(--success); }
+  .threat-radius-note { font-size: 10px; color: var(--text-dim); text-align: center; padding-top: 4px; border-top: 1px solid var(--border); margin-top: 6px; }
+
+  /* ========== ZONE (POLYGON) STYLES ========== */
+  .btn-new-zone { width: 100%; background: transparent; border: 1px dashed var(--border); color: var(--text-dim); padding: 9px; border-radius: 5px; font-size: 11px; font-weight: 600; letter-spacing: 1px; cursor: pointer; transition: all 0.15s; margin-bottom: 10px; text-transform: uppercase; }
+  .btn-new-zone:hover { border-color: var(--csblue); color: var(--csblue); background: rgba(79,195,217,0.05); }
+  .btn-new-zone.drawing { border-color: var(--csblue); color: var(--csblue); background: rgba(79,195,217,0.1); animation: pulse-btn 0.9s ease-in-out infinite; }
+
+  .zone-card { background: var(--navy3); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 10px; overflow: visible; }
+  .zone-card-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .zone-colour-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; position: relative; transition: border-color 0.15s; }
+  .zone-colour-dot:hover { border-color: white; }
+  .zone-colour-popup { position: absolute; top: 20px; left: 0; z-index: 9999; background: var(--navy2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: flex; flex-wrap: wrap; gap: 5px; width: 130px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .zone-colour-popup.hidden { display: none; }
+  .zone-name-input { flex: 1; background: transparent; border: none; color: var(--text); font-size: 12px; font-weight: 600; outline: none; min-width: 0; }
+  .zone-name-input::placeholder { color: var(--text-dim); }
+  .zone-vertex-count { font-size: 10px; color: var(--text-dim); flex-shrink: 0; font-family: monospace; }
+
+  .zone-card-body { padding: 8px 10px; }
+
+  /* Multi-select dropdown for threat types */
+  .zone-threat-label { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+  .zone-threat-dropdown { position: relative; margin-bottom: 8px; }
+  .zone-threat-trigger { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; background: var(--navy2); border: 1px solid var(--border); color: var(--text); padding: 6px 9px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: border-color 0.15s; user-select: none; }
+  .zone-threat-trigger:hover { border-color: var(--text-dim); }
+  .zone-threat-trigger.open { border-color: var(--csblue); }
+  .zone-threat-trigger-text { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .zone-threat-trigger-arrow { font-size: 9px; color: var(--text-dim); flex-shrink: 0; transition: transform 0.15s; }
+  .zone-threat-trigger.open .zone-threat-trigger-arrow { transform: rotate(180deg); }
+  .zone-threat-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 8000; background: var(--navy2); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; }
+  .zone-threat-menu.hidden { display: none; }
+  .zone-threat-option { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; transition: background 0.1s; font-size: 11px; }
+  .zone-threat-option:hover { background: rgba(255,255,255,0.05); }
+  .zone-threat-option input[type=checkbox] { accent-color: var(--csblue); width: 13px; height: 13px; flex-shrink: 0; cursor: pointer; }
+  .zone-threat-option-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  .zone-card-actions { display: flex; gap: 5px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid var(--border); margin-top: 6px; }
+  .zone-threat-count { font-size: 10px; color: var(--text-dim); padding: 2px 0; }
+
+  .zone-hint { font-size: 10px; color: var(--text-dim); font-style: italic; padding: 4px 0 2px; }
+
+  /* Leaflet popup override for threats */
+  .threat-popup .leaflet-popup-content-wrapper { background: var(--navy2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); padding: 0; }
+  .threat-popup .leaflet-popup-tip { background: var(--navy2); }
+  .threat-popup .leaflet-popup-content { margin: 0; }
+  .tp-inner { padding: 10px 12px; min-width: 200px; max-width: 260px; }
+  .tp-type { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2px; }
+  .tp-sub  { font-size: 10px; color: var(--text-dim); margin-bottom: 6px; }
+  .tp-date { font-size: 10px; color: var(--text-dim); }
+  .tp-location { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+  .tp-fatalities { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; background: rgba(232,90,79,0.2); color: var(--danger); margin-bottom: 6px; }
+  .tp-notes { font-size: 10px; color: var(--text-dim); line-height: 1.5; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px; max-height: 80px; overflow-y: auto; }
+  .tp-source { font-size: 9px; color: var(--text-dim); margin-top: 4px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">SDR<span>/</span>CS <span>Route Planner</span></div>
+  <div class="header-actions">
+    <button class="btn-export" onclick="exportMap()">⬇ Export PNG</button>
+  </div>
+</header>
+
+<!-- TRANSPORT MODE MODAL -->
+<div class="modal-backdrop hidden" id="transport-modal">
+  <div class="modal">
+    <div class="modal-title">Transport Mode</div>
+    <div class="modal-sub">How will this leg of the route be travelled?</div>
+    <div class="modal-options">
+      <div class="modal-opt driving" onclick="confirmTransportMode('driving')">
+        <div class="modal-opt-icon">🚗</div>
+        <div class="modal-opt-text">
+          <div class="modal-opt-label">Driving</div>
+          <div class="modal-opt-desc">Road routing via vehicle</div>
+        </div>
+      </div>
+      <div class="modal-opt walking" onclick="confirmTransportMode('walking')">
+        <div class="modal-opt-icon">🚶</div>
+        <div class="modal-opt-text">
+          <div class="modal-opt-label">Walking / On Foot</div>
+          <div class="modal-opt-desc">Pedestrian paths and footways</div>
+        </div>
+      </div>
+      <div class="modal-opt transit" onclick="confirmTransportMode('transit')">
+        <div class="modal-opt-icon">🚌</div>
+        <div class="modal-opt-text">
+          <div class="modal-opt-label">Public Transport</div>
+          <div class="modal-opt-desc">Bus, metro, rail (pedestrian approximation)</div>
+        </div>
+      </div>
+    </div>
+    <button class="modal-cancel" onclick="cancelTransportModal()">Cancel — discard waypoint</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-scroll">
+
+      <div class="section-label">Location Search</div>
+      <div class="search-row">
+        <input class="search-input" id="search-input" placeholder="Search address or place…" onkeydown="if(event.key==='Enter')doSearch()">
+        <button class="btn-search" onclick="doSearch()">Go</button>
+      </div>
+
+      <div class="section-label">Map Style</div>
+      <div class="tile-row">
+        <button class="tile-btn active" data-tile="street" onclick="setTile('street',this)">Street</button>
+        <button class="tile-btn" data-tile="dark" onclick="setTile('dark',this)">Dark</button>
+        <button class="tile-btn" data-tile="satellite" onclick="setTile('satellite',this)">Satellite</button>
+      </div>
+
+      <div class="section-label">Routes</div>
+      <button class="btn-new-route" onclick="createRoute()">+ New Route</button>
+      <div id="route-cards"></div>
+
+      <div class="section-label">Map Points</div>
+      <div class="add-point-section">
+        <div class="add-point-row">
+          <input class="point-label-input" id="point-label" placeholder="Point label (optional)">
+        </div>
+        <div class="color-row" id="color-row"></div>
+        <button class="btn-add-point" id="btn-add-point" onclick="toggleAddPoint()">+ Click map to place point</button>
+      </div>
+      <div id="points-list"></div>
+
+      <div class="section-label">Threat Zones (Polygons)</div>
+      <button class="btn-new-zone" id="btn-new-zone" onclick="startZoneDrawing()">+ Draw New Zone</button>
+      <div class="zone-hint" id="zone-draw-hint" style="display:none;">Click map to place vertices. Double-click or click first vertex to close. Esc to cancel.</div>
+      <div id="zone-cards"></div>
+
+      <div class="section-label" style="margin-top:8px;">Session Data</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button class="mini-btn" style="flex:1" onclick="exportData()">Export JSON</button>
+        <label class="mini-btn" style="flex:1;text-align:center;cursor:pointer;">
+          Import JSON<input type="file" accept=".json" style="display:none" onchange="importData(event)">
+        </label>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="status-bar" id="status-bar"></div>
+
+    <!-- THREAT OVERLAY PANEL -->
+    <div class="threat-panel collapsed" id="threat-panel">
+      <div class="threat-panel-header" onclick="toggleThreatPanel()">
+        <div class="threat-indicator" id="threat-indicator"></div>
+        <div class="threat-panel-title">Threat Overlay</div>
+        <span class="threat-live-badge" id="threat-live-badge">● LIVE</span>
+        <button class="threat-toggle-btn" id="threat-vis-btn" onclick="event.stopPropagation();toggleThreatVisibility()">OFF</button>
+        <span class="threat-panel-collapse" id="threat-chevron">▲</span>
+      </div>
+      <div class="threat-panel-body">
+
+        <!-- Mode tabs -->
+        <div class="threat-mode-tabs">
+          <button class="threat-mode-tab active" id="tab-historical" onclick="setThreatMode('historical')">📅 Historical</button>
+          <button class="threat-mode-tab" id="tab-live" onclick="setThreatMode('live')">📡 Live Monitor</button>
+        </div>
+
+        <!-- HISTORICAL MODE -->
+        <div class="threat-mode-section visible" id="section-historical">
+          <div class="threat-filter-label">Date Range</div>
+          <div class="threat-date-row">
+            <input class="threat-date-input" id="hist-date-from" type="date">
+            <span class="threat-date-sep">→</span>
+            <input class="threat-date-input" id="hist-date-to" type="date">
+          </div>
+          <div class="threat-filter-label">Search Scope</div>
+          <div class="threat-scope-row">
+            <button class="threat-scope-btn active" id="scope-map" onclick="setScope('map')">🗺 Map View</button>
+            <button class="threat-scope-btn" id="scope-route" onclick="setScope('route')">📍 Route Proximity</button>
+          </div>
+          <div class="threat-filter-label">Event Types</div>
+          <div class="threat-filter-grid" id="threat-filter-grid"></div>
+          <button class="threat-fetch-btn" id="threat-fetch-btn" onclick="fetchThreats()">Search Threats</button>
+          <div class="threat-status" id="threat-status"></div>
+          <div class="threat-radius-note" id="threat-scope-note">Searching current map view • Powered by GDELT</div>
+        </div>
+
+        <!-- LIVE MONITOR MODE -->
+        <div class="threat-mode-section" id="section-live">
+          <div class="threat-filter-label" style="color:var(--danger);">Live monitoring — current map view</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Auto-refreshes every 15 min. Searches last 24 hrs of news in the visible map area.</div>
+          <div class="threat-live-controls">
+            <button class="threat-live-start-btn" id="live-start-btn" onclick="toggleLiveMonitor()">▶ Start Monitor</button>
+            <span class="threat-live-countdown" id="live-countdown"></span>
+          </div>
+          <div class="threat-filter-label">Event Types</div>
+          <div class="threat-filter-grid" id="threat-filter-grid-live"></div>
+          <div class="threat-status" id="threat-status-live"></div>
+          <div class="threat-radius-note">Refreshes on map move/zoom • Powered by GDELT</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ========== CONSTANTS ==========
+const TILE_LAYERS = {
+  // All three providers serve tiles with Access-Control-Allow-Origin: *
+  // so they can be drawn onto a canvas without tainting it
+  street:    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  dark:      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+};
+const TILE_ATTR = {
+  street:    '© OpenStreetMap contributors',
+  dark:      '© OpenStreetMap contributors © CARTO',
+  satellite: '© Esri, Maxar, Earthstar Geographics'
+};
+
+// OSRM routing endpoints by mode.
+// NOTE: 'transit' uses the walking profile as a pedestrian approximation.
+// For real transit routing, integrate OpenRouteService or Google Maps Directions API.
+const OSRM = {
+  driving: 'https://router.project-osrm.org/route/v1/driving',
+  walking: 'https://router.project-osrm.org/route/v1/foot',
+  transit: 'https://router.project-osrm.org/route/v1/foot'  // pedestrian approximation
+};
+
+const TRANSPORT_LABELS = {
+  driving: { label: 'Drive', icon: '🚗', colour: 'var(--amber)' },
+  walking: { label: 'Walk',  icon: '🚶', colour: 'var(--success)' },
+  transit: { label: 'Transit', icon: '🚌', colour: 'var(--transit)' }
+};
+
+const ROUTE_COLOURS = [
+  '#f5a623','#4fc3d9','#e85a4f','#4fbf6f','#c084fc',
+  '#f97316','#38bdf8','#fb7185','#a3e635','#e879f9','#ffffff','#facc15'
+];
+const ROUTE_TYPES = ['SDR','CS','Primary','Alt','Escape','Custom'];
+const POINT_COLOURS = ['#f5a623','#4fc3d9','#e85a4f','#4fbf6f','#c084fc','#ffffff','#f97316','#38bdf8'];
+
+// ========== STATE ==========
+let map, currentTileLayer;
+// routes[id] = { id, name, type, colour, defaultProfile,
+//   start, end, waypoints: [{lat,lng,profile}], insertMode,
+//   notes, distance, duration,
+//   polyline, startMarker, endMarker, wpMarkers, legPolylines }
+let routes = {};
+let routeIdCounter = 0;
+
+let routeCapture = { active: false, id: null, step: null };
+let waypointEdit  = { active: false, id: null };
+let pendingWaypoint = null; // { id, latlng } — held while modal is open
+let addPointMode = false;
+let points = [];
+let pointIdCounter = 0;
+let selectedColour = POINT_COLOURS[0];
+let openColourPicker = null;
+
+// ========== MAP INIT ==========
+map = L.map('map', { zoomControl: true }).setView([51.5074, -0.1278], 12);
+setTile('street', document.querySelector('[data-tile="street"]'));
+map.on('click', onMapClick);
+
+document.addEventListener('click', e => {
+  if (openColourPicker !== null && !e.target.closest('.route-colour-btn') && !e.target.closest('.colour-picker-popup')) {
+    closeColourPicker();
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('transport-modal').classList.contains('hidden') === false) {
+      cancelTransportModal();
+    } else if (zoneDrawing.active) {
+      cancelZoneDrawing();
+    } else if (routeCapture.active) {
+      cancelRouteCapture();
+    } else if (waypointEdit.active) {
+      endWaypointEdit();
+    } else if (addPointMode) {
+      toggleAddPoint(false);
+    }
+  }
+});
+
+// ========== POINT COLOUR SWATCHES ==========
+const colorRow = document.getElementById('color-row');
+POINT_COLOURS.forEach(c => {
+  const s = document.createElement('div');
+  s.className = 'color-swatch' + (c === selectedColour ? ' selected' : '');
+  s.style.background = c;
+  s.onclick = () => {
+    selectedColour = c;
+    document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('selected'));
+    s.classList.add('selected');
+  };
+  colorRow.appendChild(s);
+});
+
+// ========== TILE CONTROL ==========
+function setTile(name, btn) {
+  if (currentTileLayer) map.removeLayer(currentTileLayer);
+  currentTileLayer = L.tileLayer(TILE_LAYERS[name], {
+    attribution: TILE_ATTR[name],
+    crossOrigin: 'anonymous',   // Required so tiles can be drawn to canvas without tainting
+    maxZoom: 19
+  }).addTo(map);
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+// ========== SEARCH ==========
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  showStatus('Searching…');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`, { headers: { 'Accept-Language': 'en' } });
+    const data = await res.json();
+    if (!data.length) { showStatus('No results found', true); return; }
+    map.setView([+data[0].lat, +data[0].lon], 15);
+    hideStatus();
+  } catch { showStatus('Search failed', true); }
+}
+
+// ========== ROUTE CREATION ==========
+function pickNextColour() {
+  const used = Object.values(routes).map(r => r.colour);
+  return ROUTE_COLOURS.find(c => !used.includes(c)) || ROUTE_COLOURS[Object.keys(routes).length % ROUTE_COLOURS.length];
+}
+
+function createRoute() {
+  const id = `route_${++routeIdCounter}`;
+  routes[id] = {
+    id, name: `Route ${routeIdCounter}`, type: 'SDR', colour: pickNextColour(),
+    defaultProfile: 'driving',
+    start: null, end: null, waypoints: [], insertMode: 'smart',
+    notes: '', distance: 0, duration: 0,
+    polyline: null, startMarker: null, endMarker: null, wpMarkers: [], legPolylines: []
+  };
+  renderRouteCards();
+  setTimeout(() => { document.getElementById(`card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 50);
+}
+
+// ========== COLOUR PICKER ==========
+function toggleColourPicker(id) {
+  if (openColourPicker === id) { closeColourPicker(); return; }
+  closeColourPicker();
+  openColourPicker = id;
+  document.getElementById(`cp-${id}`)?.classList.remove('hidden');
+}
+function closeColourPicker() {
+  if (openColourPicker !== null) {
+    document.getElementById(`cp-${openColourPicker}`)?.classList.add('hidden');
+    openColourPicker = null;
+  }
+}
+function setRouteColour(id, colour) {
+  const r = routes[id];
+  if (!r) return;
+  r.colour = colour;
+  // Update all map objects live
+  r.legPolylines?.forEach(pl => pl.setStyle({ color: colour }));
+  if (r.polyline) r.polyline.setStyle({ color: colour });
+  if (r.startMarker) r.startMarker.setIcon(endpointIcon(colour, 'A'));
+  if (r.endMarker)   r.endMarker.setIcon(endpointIcon(colour, 'B'));
+  r.wpMarkers?.forEach((m, i) => m.setIcon(waypointIcon(colour, i + 1)));
+  closeColourPicker();
+  renderRouteCards();
+}
+
+function cycleRouteType(id) {
+  const r = routes[id];
+  if (!r) return;
+  r.type = ROUTE_TYPES[(ROUTE_TYPES.indexOf(r.type) + 1) % ROUTE_TYPES.length];
+  renderRouteCards();
+}
+
+// ========== ROUTE CAPTURE ==========
+function startRouteCapture(id) {
+  const r = routes[id];
+  if (!r) return;
+  if (waypointEdit.active) endWaypointEdit();
+  if (addPointMode) toggleAddPoint(false);
+  if (routeCapture.active && routeCapture.id === id) { cancelRouteCapture(); return; }
+  if (routeCapture.active) cancelRouteCapture();
+  routeCapture = { active: true, id, step: 'start' };
+  renderRouteCards();
+  map.getContainer().style.cursor = 'crosshair';
+  showStatus(`${r.name}: Click START point on map`, false, true);
+}
+function cancelRouteCapture() {
+  if (!routeCapture.active) return;
+  routeCapture = { active: false, id: null, step: null };
+  map.getContainer().style.cursor = '';
+  hideStatus();
+  renderRouteCards();
+}
+
+// ========== WAYPOINT EDIT ==========
+function startWaypointEdit(id) {
+  waypointEdit = { active: true, id };
+  map.getContainer().style.cursor = 'crosshair';
+  showStatus(`${routes[id]?.name}: Click map to add waypoint — transport mode will be asked`, false, true);
+  renderRouteCards();
+}
+function endWaypointEdit() {
+  waypointEdit = { active: false, id: null };
+  map.getContainer().style.cursor = '';
+  hideStatus();
+  renderRouteCards();
+}
+
+// ========== TRANSPORT MODE MODAL ==========
+function showTransportModal(routeId, latlng) {
+  pendingWaypoint = { id: routeId, latlng };
+  map.getContainer().style.cursor = '';
+  document.getElementById('transport-modal').classList.remove('hidden');
+}
+function cancelTransportModal() {
+  pendingWaypoint = null;
+  document.getElementById('transport-modal').classList.add('hidden');
+  // Resume waypoint edit cursor
+  if (waypointEdit.active) {
+    map.getContainer().style.cursor = 'crosshair';
+    showStatus(`${routes[waypointEdit.id]?.name}: Click map to add waypoint`, false, true);
+  }
+}
+function confirmTransportMode(mode) {
+  if (!pendingWaypoint) return;
+  const { id, latlng } = pendingWaypoint;
+  pendingWaypoint = null;
+  document.getElementById('transport-modal').classList.add('hidden');
+
+  const r = routes[id];
+  if (!r) return;
+
+  // Restore cursor for continued waypoint adding
+  if (waypointEdit.active && waypointEdit.id === id) {
+    map.getContainer().style.cursor = 'crosshair';
+    showStatus(`${r.name}: Click map to add another waypoint — Esc to finish`, false, true);
+  }
+
+  const newWP = { lat: latlng.lat, lng: latlng.lng, profile: mode };
+  const inserted = insertWaypoint(r.waypoints, newWP, r.insertMode, r.start, r.end);
+  fetchAndDrawRoute(id, r.start, r.end, r.defaultProfile, inserted, r.insertMode);
+}
+
+// ========== MAP CLICK HANDLER ==========
+function onMapClick(e) {
+  const ll = e.latlng;
+
+  // Zone drawing takes priority
+  if (zoneDrawing.active) {
+    onZoneClick(ll, e);
+    return;
+  }
+
+  if (routeCapture.active) {
+    const id = routeCapture.id;
+    const r = routes[id];
+    if (!r) { cancelRouteCapture(); return; }
+    if (routeCapture.step === 'start') {
+      routeCapture.step = 'end';
+      routeCapture.startLL = ll;
+      showStatus(`${r.name}: Click END point on map`, false, true);
+      renderRouteCards();
+    } else {
+      const start = routeCapture.startLL;
+      const end = ll;
+      cancelRouteCapture();
+      fetchAndDrawRoute(id, start, end, r.defaultProfile, [], r.insertMode).then(() => {
+        if (routes[id]) startWaypointEdit(id);
+      });
+    }
+    return;
+  }
+
+  if (waypointEdit.active) {
+    const id = waypointEdit.id;
+    const r = routes[id];
+    if (!r) return;
+    // Show modal to ask transport mode — cursor paused until answered
+    showTransportModal(id, ll);
+    return;
+  }
+
+  if (addPointMode) { placePoint(ll); return; }
+}
+
+// ========== WAYPOINT INSERTION ==========
+function insertWaypoint(existing, newWP, mode, start, end) {
+  if (mode === 'append') return [...existing, newWP];
+  const pts = [start, ...existing, end];
+  let bestIdx = existing.length, bestCost = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const cost = dist(a, newWP) + dist(newWP, b) - dist(a, b);
+    if (cost < bestCost) { bestCost = cost; bestIdx = i; }
+  }
+  const copy = [...existing];
+  copy.splice(bestIdx, 0, newWP);
+  return copy;
+}
+function dist(a, b) {
+  const dlat = a.lat - b.lat, dlng = a.lng - b.lng;
+  return Math.sqrt(dlat * dlat + dlng * dlng);
+}
+
+// ========== ROUTING ==========
+// The route is broken into legs: start → wp[0] → wp[1] → … → end
+// Each leg uses the profile of the arriving waypoint (wp[i].profile).
+// The last leg (last wp → end) uses the last waypoint's profile,
+// and the first leg (start → wp[0]) uses wp[0].profile.
+// If no waypoints, use route defaultProfile.
+
+function legProfile(waypoints, legIdx) {
+  // legIdx 0 = start→wp[0], legIdx n = wp[n-1]→end
+  if (!waypoints.length) return 'driving';
+  if (legIdx < waypoints.length) return waypoints[legIdx].profile || 'driving';
+  return waypoints[waypoints.length - 1].profile || 'driving';
+}
+
+async function fetchLeg(profile, from, to) {
+  const url = `${OSRM[profile] || OSRM.driving}/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Routing error (${profile})`);
+  const data = await res.json();
+  if (!data.routes?.length) throw new Error('No route found');
+  return data.routes[0]; // { distance, duration, geometry: { coordinates } }
+}
+
+async function fetchAndDrawRoute(id, start, end, defaultProfile, waypoints, insertMode) {
+  const r = routes[id];
+  if (!r) return;
+  showStatus(`Calculating ${r.name}…`);
+  const wp  = waypoints  !== undefined ? waypoints  : (r.waypoints  || []);
+  const mode = insertMode !== undefined ? insertMode : (r.insertMode || 'smart');
+
+  try {
+    // Build leg list: [ [from, to, profile], ... ]
+    const pts = [start, ...wp, end];
+    const legs = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const profile = legProfile(wp, i);
+      legs.push({ from: pts[i], to: pts[i + 1], profile });
+    }
+
+    // Fetch all legs in parallel
+    const results = await Promise.all(legs.map(l => fetchLeg(l.profile, l.from, l.to)));
+
+    const totalDist = results.reduce((s, r) => s + r.distance, 0);
+    const totalDur  = results.reduce((s, r) => s + r.duration, 0);
+    // Flatten all coordinates for a combined polyline (for bbox/fit)
+    const allCoords = results.flatMap(r => r.geometry.coordinates);
+
+    drawRoute(id, start, end, defaultProfile, wp, mode, results, allCoords, totalDist, totalDur);
+    hideStatus();
+  } catch (err) {
+    showStatus(`Routing failed: ${err.message}`, true);
+  }
+}
+
+function drawRoute(id, start, end, defaultProfile, waypoints, insertMode, legResults, allCoords, distance, duration) {
+  const r = routes[id];
+  if (!r) return;
+  const colour = r.colour;
+  clearRouteFromMap(id);
+
+  // Draw each leg as a separate polyline with its own dash style based on mode
+  const legPolylines = legResults.map((leg, i) => {
+    const profile = legProfile(waypoints, i);
+    const latlngs = leg.geometry.coordinates.map(c => [c[1], c[0]]);
+    const dashArray = profile === 'transit' ? '4,8' : profile === 'walking' ? '2,6' : null;
+    return L.polyline(latlngs, { color: colour, weight: 4, opacity: 0.85, dashArray }).addTo(map);
+  });
+
+  // Start / end markers
+  const startM = L.marker([start.lat, start.lng], { icon: endpointIcon(colour, 'A'), draggable: true })
+    .addTo(map)
+    .on('dragend', e => {
+      const ll = e.target.getLatLng();
+      const rt = routes[id];
+      if (rt) fetchAndDrawRoute(id, { lat: ll.lat, lng: ll.lng }, rt.end, rt.defaultProfile, rt.waypoints, rt.insertMode);
+    });
+  const endM = L.marker([end.lat, end.lng], { icon: endpointIcon(colour, 'B'), draggable: true })
+    .addTo(map)
+    .on('dragend', e => {
+      const ll = e.target.getLatLng();
+      const rt = routes[id];
+      if (rt) fetchAndDrawRoute(id, rt.start, { lat: ll.lat, lng: ll.lng }, rt.defaultProfile, rt.waypoints, rt.insertMode);
+    });
+
+  // Waypoint markers
+  const wpMarkers = waypoints.map((wp, i) => {
+    return L.marker([wp.lat, wp.lng], { icon: waypointIcon(colour, i + 1), draggable: true })
+      .addTo(map)
+      .on('dragend', e => {
+        const ll = e.target.getLatLng();
+        const rt = routes[id];
+        if (!rt) return;
+        const newWPs = [...rt.waypoints];
+        newWPs[i] = { ...newWPs[i], lat: ll.lat, lng: ll.lng };
+        fetchAndDrawRoute(id, rt.start, rt.end, rt.defaultProfile, newWPs, rt.insertMode);
+      });
+  });
+
+  // Build a thin combined polyline just for fitBounds (invisible)
+  const allLatlngs = allCoords.map(c => [c[1], c[0]]);
+  const polyline = L.polyline(allLatlngs, { opacity: 0, weight: 0 }).addTo(map);
+
+  routes[id] = {
+    ...routes[id],
+    start, end, defaultProfile, waypoints, insertMode, distance, duration,
+    polyline, legPolylines, startMarker: startM, endMarker: endM, wpMarkers
+  };
+
+  renderRouteCards();
+}
+
+function clearRouteFromMap(id) {
+  const r = routes[id];
+  if (!r) return;
+  r.polyline?.remove();
+  r.legPolylines?.forEach(pl => pl.remove());
+  r.startMarker?.remove();
+  r.endMarker?.remove();
+  r.wpMarkers?.forEach(m => m.remove());
+  routes[id].legPolylines = [];
+  routes[id].wpMarkers = [];
+}
+
+function removeRoute(id) {
+  clearRouteFromMap(id);
+  delete routes[id];
+  if (routeCapture.id === id) cancelRouteCapture();
+  if (waypointEdit.id === id) endWaypointEdit();
+  renderRouteCards();
+}
+
+// ========== WAYPOINT DRAG-REORDER ==========
+let dragSrc = null;
+
+function renderWaypointList(id) {
+  const r = routes[id];
+  if (!r || !r.waypoints.length) return '';
+  let html = `<div class="wp-list"><div class="wp-list-label">Waypoints — leg transport mode shown</div>`;
+  r.waypoints.forEach((wp, i) => {
+    const t = TRANSPORT_LABELS[wp.profile] || TRANSPORT_LABELS.driving;
+    html += `<div class="wp-item" draggable="true" data-id="${id}" data-idx="${i}">
+      <span class="wp-drag-handle">⣿</span>
+      <span class="wp-num" style="color:${r.colour}">${i + 1}</span>
+      <span class="wp-coords">${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}</span>
+      <span class="wp-mode-badge ${wp.profile || 'driving'}" title="Leg transport mode">${t.icon} ${t.label}</span>
+      <button class="wp-del" onclick="removeWaypoint('${id}',${i})">✕</button>
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+function bindWaypointDrag(card, id) {
+  card.querySelectorAll('.wp-item').forEach(item => {
+    item.addEventListener('dragstart', e => { dragSrc = { id, idx: +item.dataset.idx }; e.dataTransfer.effectAllowed = 'move'; });
+    item.addEventListener('dragover',  e => { e.preventDefault(); item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('drop', e => {
+      e.preventDefault(); item.classList.remove('drag-over');
+      if (!dragSrc || dragSrc.id !== id) return;
+      const toIdx = +item.dataset.idx;
+      if (dragSrc.idx === toIdx) return;
+      const r = routes[id];
+      const wps = [...r.waypoints];
+      const [moved] = wps.splice(dragSrc.idx, 1);
+      wps.splice(toIdx, 0, moved);
+      fetchAndDrawRoute(id, r.start, r.end, r.defaultProfile, wps, r.insertMode);
+    });
+  });
+}
+
+function removeWaypoint(id, idx) {
+  const r = routes[id];
+  if (!r) return;
+  fetchAndDrawRoute(id, r.start, r.end, r.defaultProfile, r.waypoints.filter((_, i) => i !== idx), r.insertMode);
+}
+
+// ========== ROUTE CARDS ==========
+function formatDist(m) { return m >= 1000 ? `${(m/1000).toFixed(1)} km` : `${Math.round(m)} m`; }
+function formatDur(s) { const m = Math.round(s/60); return m >= 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m} min`; }
+
+function renderRouteCards() {
+  const container = document.getElementById('route-cards');
+  container.innerHTML = '';
+
+  Object.values(routes).forEach(r => {
+    const id = r.id;
+    const isCapturing = routeCapture.active && routeCapture.id === id;
+    const isEditing   = waypointEdit.active && waypointEdit.id === id;
+    const hasRoute    = r.legPolylines && r.legPolylines.length > 0;
+
+    let capBtnClass = 'idle', capBtnText = 'Set Route';
+    if (isCapturing && routeCapture.step === 'start') { capBtnClass = 'active'; capBtnText = '● Set Start'; }
+    else if (isCapturing && routeCapture.step === 'end') { capBtnClass = 'step2'; capBtnText = '● Set End'; }
+    else if (hasRoute) { capBtnText = 'Reroute'; }
+
+    const swatchesHtml = ROUTE_COLOURS.map(c =>
+      `<div class="cp-swatch${c === r.colour ? ' selected' : ''}" style="background:${c}" onclick="setRouteColour('${id}','${c}')"></div>`
+    ).join('');
+
+    const card = document.createElement('div');
+    card.className = `route-card${isCapturing ? ' capturing' : ''}`;
+    card.id = `card-${id}`;
+    card.innerHTML = `
+      <div class="route-card-header">
+        <div class="route-colour-btn" style="background:${r.colour}" onclick="toggleColourPicker('${id}')" title="Change colour">
+          <div class="colour-picker-popup hidden" id="cp-${id}">${swatchesHtml}</div>
+        </div>
+        <input class="route-name-input" value="${escHtml(r.name)}" placeholder="Route name" data-id="${id}">
+        <span class="route-type-tag" style="color:${r.colour}" onclick="cycleRouteType('${id}')">${r.type}</span>
+        <button class="route-capture-btn ${capBtnClass}" onclick="startRouteCapture('${id}')">${capBtnText}</button>
+      </div>
+      ${hasRoute
+        ? `<div class="route-card-stats">${formatDist(r.distance)} · ${formatDur(r.duration)} · ${r.waypoints.length} waypoint${r.waypoints.length !== 1 ? 's' : ''}</div>`
+        : `<div class="route-card-stats" style="font-style:italic;">No route plotted — click Set Route</div>`}
+      <div class="route-card-controls">
+        <select class="mini-select" data-ctrl="insert" data-id="${id}">
+          <option value="smart"  ${r.insertMode === 'smart'  ? 'selected' : ''}>Smart insert</option>
+          <option value="append" ${r.insertMode === 'append' ? 'selected' : ''}>Append</option>
+        </select>
+        ${hasRoute ? `<button class="mini-btn ${isEditing ? 'active-edit' : ''}" data-action="${isEditing ? 'doneEdit' : 'edit'}" data-id="${id}">${isEditing ? '✓ Done' : '+ Waypoints'}</button>` : ''}
+        ${hasRoute ? `<button class="mini-btn" data-action="fit" data-id="${id}">Fit</button>` : ''}
+        <button class="mini-btn danger" data-action="remove" data-id="${id}">Remove</button>
+      </div>
+      ${renderWaypointList(id)}
+      <textarea class="route-notes-input" placeholder="Notes…" data-id="${id}">${escHtml(r.notes)}</textarea>
+    `;
+
+    card.querySelector('.route-name-input').addEventListener('input', e => { routes[id].name = e.target.value; });
+    card.querySelector('.route-notes-input').addEventListener('input', e => { routes[id].notes = e.target.value; });
+    card.querySelectorAll('select.mini-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const rt = routes[sel.dataset.id];
+        if (!rt) return;
+        rt.insertMode = sel.value;
+      });
+    });
+    card.querySelectorAll('button[data-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const rt = routes[btn.dataset.id];
+        if (!rt) return;
+        if (btn.dataset.action === 'fit')      map.fitBounds(rt.polyline.getBounds(), { padding: [40,40] });
+        else if (btn.dataset.action === 'remove')   removeRoute(id);
+        else if (btn.dataset.action === 'edit')     startWaypointEdit(id);
+        else if (btn.dataset.action === 'doneEdit') endWaypointEdit();
+      });
+    });
+    bindWaypointDrag(card, id);
+    container.appendChild(card);
+  });
+}
+renderRouteCards();
+
+// ========== POINTS ==========
+function toggleAddPoint(force) {
+  addPointMode = force !== undefined ? force : !addPointMode;
+  document.getElementById('btn-add-point').classList.toggle('active', addPointMode);
+  map.getContainer().style.cursor = addPointMode ? 'crosshair' : '';
+  if (addPointMode) showStatus('Click map to place point — Esc to cancel', false, true);
+  else hideStatus();
+}
+function placePoint(latlng) {
+  const label = document.getElementById('point-label').value.trim() || `Point ${pointIdCounter + 1}`;
+  const colour = selectedColour;
+  const id = ++pointIdCounter;
+  const marker = L.marker([latlng.lat, latlng.lng], { icon: pointIcon(colour, label), draggable: true })
+    .addTo(map).bindPopup(`<b style="color:${colour}">${label}</b>`)
+    .on('dragend', e => { const pt = points.find(p => p.id === id); if (pt) pt.latlng = e.target.getLatLng(); });
+  points.push({ id, latlng, label, colour, marker });
+  renderPointsList();
+  toggleAddPoint(false);
+  document.getElementById('point-label').value = '';
+}
+function deletePoint(id) {
+  const idx = points.findIndex(p => p.id === id);
+  if (idx === -1) return;
+  points[idx].marker.remove();
+  points.splice(idx, 1);
+  renderPointsList();
+}
+function renderPointsList() {
+  const list = document.getElementById('points-list');
+  if (!points.length) { list.innerHTML = '<div class="no-points">No points placed</div>'; return; }
+  list.innerHTML = points.map(p => `
+    <div class="point-item" onclick="map.setView([${p.latlng.lat},${p.latlng.lng}],15)">
+      <div class="point-dot" style="background:${p.colour}"></div>
+      <div class="point-label">${escHtml(p.label)}</div>
+      <button class="point-del" onclick="event.stopPropagation();deletePoint(${p.id})">✕</button>
+    </div>`).join('');
+}
+renderPointsList();
+
+// ========== ICONS ==========
+function endpointIcon(colour, label) {
+  return L.divIcon({ className: '', html: `<div style="width:28px;height:28px;border-radius:50%;background:${colour};border:3px solid #0d1b2a;display:flex;align-items:center;justify-content:center;color:#0d1b2a;font-weight:800;font-size:11px;box-shadow:0 2px 8px rgba(0,0,0,0.5);">${label}</div>`, iconSize:[28,28], iconAnchor:[14,14] });
+}
+function waypointIcon(colour, num) {
+  return L.divIcon({ className: '', html: `<div style="width:22px;height:22px;border-radius:50%;background:#0d1b2a;border:2.5px solid ${colour};display:flex;align-items:center;justify-content:center;color:${colour};font-weight:700;font-size:10px;box-shadow:0 2px 5px rgba(0,0,0,0.5);">${num}</div>`, iconSize:[22,22], iconAnchor:[11,11] });
+}
+function pointIcon(colour, label) {
+  const short = label.length > 12 ? label.slice(0,12)+'…' : label;
+  return L.divIcon({ className: '', html: `<div style="display:flex;flex-direction:column;align-items:center;"><div style="width:14px;height:14px;border-radius:50%;background:${colour};border:2px solid #0d1b2a;box-shadow:0 1px 4px rgba(0,0,0,0.5);"></div><div style="background:rgba(13,27,42,0.85);color:${colour};font-size:9px;font-weight:600;padding:1px 4px;border-radius:2px;margin-top:1px;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis;">${short}</div></div>`, iconSize:[80,28], iconAnchor:[40,8] });
+}
+
+// ========== STATUS ==========
+function showStatus(msg, isError=false, isCapture=false) {
+  const el = document.getElementById('status-bar');
+  el.textContent = msg;
+  el.className = 'status-bar visible' + (isError?' error':'') + (isCapture?' capture':'');
+}
+function hideStatus() { document.getElementById('status-bar').className = 'status-bar'; }
+
+// ========== EXPORT PNG ==========
+async function exportMap() {
+  const named = Object.values(routes).filter(r => r.legPolylines?.length);
+  const exportBtn = document.querySelector('.btn-export');
+  exportBtn.textContent = '⏳ Exporting…';
+  exportBtn.disabled = true;
+
+  try {
+    const mapEl   = document.getElementById('map');
+    const W = mapEl.offsetWidth;
+    const H = mapEl.offsetHeight;
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = W * 2;  // 2x for retina
+    canvas.height = H * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+
+    // ── Step 1: Draw tile images already loaded in the DOM ──
+    // Leaflet stores rendered tiles as <img> elements inside .leaflet-tile-pane
+    const tileImgs = mapEl.querySelectorAll('.leaflet-tile-pane img.leaflet-tile');
+    const tilePromises = Array.from(tileImgs).map(img => new Promise(resolve => {
+      if (img.complete && img.naturalWidth > 0) { resolve(img); return; }
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+    }));
+    const loadedTiles = await Promise.all(tilePromises);
+
+    // Get the map container's bounding rect for positioning
+    const mapRect = mapEl.getBoundingClientRect();
+
+    loadedTiles.forEach((img, i) => {
+      if (!img) return;
+      const tileRect = tileImgs[i].getBoundingClientRect();
+      const x = tileRect.left - mapRect.left;
+      const y = tileRect.top  - mapRect.top;
+      try {
+        ctx.drawImage(img, x, y, tileRect.width, tileRect.height);
+      } catch (e) {
+        // Skip tainted tiles — they'll just be absent rather than breaking the export
+      }
+    });
+
+    // ── Step 2: Draw SVG overlay (routes, markers, zones) ──
+    // Leaflet renders vectors into an SVG element in .leaflet-overlay-pane
+    const svgEl = mapEl.querySelector('.leaflet-overlay-pane svg');
+    if (svgEl) {
+      const svgStr  = new XMLSerializer().serializeToString(svgEl);
+      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl  = URL.createObjectURL(svgBlob);
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const svgRect = svgEl.getBoundingClientRect();
+          ctx.drawImage(img, svgRect.left - mapRect.left, svgRect.top - mapRect.top, svgRect.width, svgRect.height);
+          URL.revokeObjectURL(svgUrl);
+          resolve();
+        };
+        img.onerror = () => { URL.revokeObjectURL(svgUrl); resolve(); }; // non-fatal
+        img.src = svgUrl;
+      });
+    }
+
+    // ── Step 3: Draw marker pane (div icons, img markers, canvas layers) ──
+    // Leaflet puts markers in .leaflet-marker-pane as positioned <div> or <img> elements.
+    // We serialise each one via foreignObject SVG so the browser renders the HTML to a bitmap.
+
+    async function drawDivEl(el) {
+      const r = el.getBoundingClientRect();
+      const x = r.left - mapRect.left;
+      const y = r.top  - mapRect.top;
+      const w = Math.ceil(r.width)  || 40;
+      const h = Math.ceil(r.height) || 40;
+      if (w <= 0 || h <= 0) return;
+
+      // Clone and inline computed styles so fonts/colours survive serialisation
+      const clone = el.cloneNode(true);
+      clone.style.position = 'static';
+      clone.style.transform = 'none';
+
+      const xmlns = 'http://www.w3.org/2000/svg';
+      const svgStr = `<svg xmlns="${xmlns}" width="${w}" height="${h}">
+        <foreignObject width="${w}" height="${h}">
+          <div xmlns="http://www.w3.org/1999/xhtml"
+               style="font-family:'Segoe UI',sans-serif;font-size:12px;line-height:1;padding:0;margin:0;">
+            ${clone.outerHTML}
+          </div>
+        </foreignObject>
+      </svg>`;
+
+      await new Promise(resolve => {
+        const img = new Image();
+        const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+        const url  = URL.createObjectURL(blob);
+        img.onload = () => {
+          try { ctx.drawImage(img, x, y, w, h); } catch(e) {}
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+        img.src = url;
+      });
+    }
+
+    // Draw any direct canvas overlays first (e.g. from canvas-renderer plugins)
+    for (const el of mapEl.querySelectorAll('.leaflet-overlay-pane > canvas')) {
+      try {
+        const r = el.getBoundingClientRect();
+        ctx.drawImage(el, r.left - mapRect.left, r.top - mapRect.top, r.width, r.height);
+      } catch(e) {}
+    }
+
+    // Draw every element in the marker pane
+    for (const el of mapEl.querySelectorAll('.leaflet-marker-pane > *')) {
+      if (el.tagName === 'IMG') {
+        // Standard Leaflet image icon — draw directly if not tainted
+        try {
+          const r = el.getBoundingClientRect();
+          ctx.drawImage(el, r.left - mapRect.left, r.top - mapRect.top, r.width, r.height);
+        } catch(e) {
+          await drawDivEl(el); // fallback
+        }
+      } else {
+        // div icon (our custom markers — A/B circles, numbered waypoints, point labels)
+        await drawDivEl(el);
+      }
+    }
+
+    // ── Step 4: Export branding overlay ──
+    const routeNames = named.map(r => r.name).join(' / ') || 'SDR/CS Route Planner';
+    const statsLine  = named.map(r => `${r.name}: ${formatDist(r.distance)}, ${formatDur(r.duration)}`).join('  |  ');
+
+    // Dark gradient bottom bar
+    const grad = ctx.createLinearGradient(0, H * 0.65, 0, H);
+    grad.addColorStop(0, 'rgba(13,27,42,0)');
+    grad.addColorStop(1, 'rgba(13,27,42,0.88)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Branding text
+    ctx.font = 'bold 10px "Segoe UI", sans-serif';
+    ctx.fillStyle = '#f5a623';
+    ctx.letterSpacing = '3px';
+    ctx.fillText('SDR / CS ROUTE PLANNER', 16, H - 48);
+
+    ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(routeNames, 16, H - 28);
+
+    if (statsLine) {
+      ctx.font = '11px "Segoe UI", sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(statsLine, 16, H - 10);
+    }
+
+    // ── Step 5: Download ──
+    canvas.toBlob(blob => {
+      if (!blob) { showStatus('Export failed — canvas was empty', true); setTimeout(hideStatus, 3000); return; }
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement('a'), {
+        download: `sdr-route-${new Date().toISOString().slice(0,10)}.png`,
+        href: url
+      }).click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+
+  } catch (err) {
+    showStatus(`Export failed: ${err.message}`, true);
+    setTimeout(hideStatus, 3000);
+  } finally {
+    exportBtn.textContent = '⬇ Export PNG';
+    exportBtn.disabled = false;
+  }
+}
+
+// ========== IMPORT / EXPORT JSON ==========
+function exportData() {
+  const data = {
+    routeIdCounter,
+    points: points.map(p => ({ id: p.id, lat: p.latlng.lat, lng: p.latlng.lng, label: p.label, colour: p.colour })),
+    routes: Object.values(routes).map(r => ({
+      id: r.id, name: r.name, type: r.type, colour: r.colour, defaultProfile: r.defaultProfile,
+      start: r.start, end: r.end, waypoints: r.waypoints, insertMode: r.insertMode,
+      notes: r.notes, distance: r.distance, duration: r.duration
+    }))
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `sdr-session-${Date.now()}.json` }).click();
+}
+
+async function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    Object.keys(routes).forEach(removeRoute);
+    points.forEach(p => p.marker.remove());
+    points.length = 0;
+    routeIdCounter = data.routeIdCounter || 0;
+    if (data.routes) {
+      for (const saved of data.routes) {
+        routes[saved.id] = {
+          id: saved.id, name: saved.name, type: saved.type || 'SDR', colour: saved.colour,
+          defaultProfile: saved.defaultProfile || 'driving',
+          waypoints: [], insertMode: saved.insertMode || 'smart',
+          notes: saved.notes || '', distance: 0, duration: 0,
+          polyline: null, legPolylines: [], startMarker: null, endMarker: null, wpMarkers: []
+        };
+        if (saved.start && saved.end) {
+          await fetchAndDrawRoute(saved.id, saved.start, saved.end, saved.defaultProfile, saved.waypoints, saved.insertMode);
+        }
+      }
+    }
+    if (data.points) {
+      data.points.forEach(p => {
+        pointIdCounter = Math.max(pointIdCounter, p.id);
+        const marker = L.marker([p.lat, p.lng], { icon: pointIcon(p.colour, p.label), draggable: true })
+          .addTo(map).bindPopup(`<b style="color:${p.colour}">${p.label}</b>`);
+        points.push({ id: p.id, latlng: { lat: p.lat, lng: p.lng }, label: p.label, colour: p.colour, marker });
+      });
+    }
+    renderPointsList();
+    renderRouteCards();
+    showStatus('Session imported successfully');
+    setTimeout(hideStatus, 2000);
+  } catch {
+    showStatus('Import failed: invalid file', true);
+    setTimeout(hideStatus, 3000);
+  }
+}
+
+function escHtml(str) {
+  return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ========== THREAT OVERLAY ==========
+
+const THREAT_EVENT_TYPES = [
+  { key: 'Armed Conflict',     colour: '#e85a4f', icon: '⚔️',  query: 'attack OR battle OR gunfire OR airstrike OR armed clash' },
+  { key: 'Explosion/Bombing',  colour: '#f97316', icon: '💥',  query: 'explosion OR bomb OR blast OR IED OR rocket attack' },
+  { key: 'Violence/Assault',   colour: '#c084fc', icon: '🎯',  query: 'shooting OR stabbing OR assault OR murder OR kidnapping' },
+  { key: 'Riots/Civil Unrest', colour: '#facc15', icon: '🔥',  query: 'riot OR looting OR violent protest OR civil unrest' },
+  { key: 'Protests',           colour: '#38bdf8', icon: '✊',  query: 'protest OR demonstration OR march OR rally OR strike' },
+  { key: 'Security Incident',  colour: '#8a9bb0', icon: '📌',  query: 'security incident OR terror OR threat OR arrest OR crackdown' },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let threatVisible    = false;
+let threatMarkers    = [];
+let threatData       = [];
+let activeFilters    = new Set(THREAT_EVENT_TYPES.map(t => t.key));
+let activeLiveFilters= new Set(THREAT_EVENT_TYPES.map(t => t.key));
+let threatPanelOpen  = false;
+let threatMode       = 'historical';   // 'historical' | 'live'
+let threatScope      = 'map';          // 'map' | 'route'
+let liveMonitorRunning = false;
+let liveIntervalId   = null;
+let liveCountdownId  = null;
+let liveNextRefresh  = 0;             // ms timestamp
+const LIVE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+(function initDates() {
+  const to   = new Date();
+  const from = new Date(); from.setMonth(from.getMonth() - 3);
+  const fmt  = d => d.toISOString().slice(0, 10);
+  document.getElementById('hist-date-from').value = fmt(from);
+  document.getElementById('hist-date-to').value   = fmt(to);
+})();
+
+(function buildFilters() {
+  function buildGrid(gridId, filters, onchange) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    THREAT_EVENT_TYPES.forEach(t => {
+      const row = document.createElement('label');
+      row.className = 'threat-filter-row';
+      row.innerHTML = `
+        <input type="checkbox" checked data-type="${escHtml(t.key)}" onchange="${onchange}">
+        <div class="threat-filter-dot" style="background:${t.colour}"></div>
+        <span class="threat-filter-name">${t.icon} ${escHtml(t.key)}</span>
+        <span class="threat-filter-count" id="${gridId}-fc-${t.key.replace(/[^a-z0-9]/gi,'_')}"></span>
+      `;
+      grid.appendChild(row);
+    });
+  }
+  buildGrid('threat-filter-grid',      activeFilters,     'onFilterChange()');
+  buildGrid('threat-filter-grid-live', activeLiveFilters, 'onLiveFilterChange()');
+})();
+
+// Refresh live markers when map moves/zooms (only if live monitor running)
+// We do NOT auto-fetch on move — that would hammer the API.
+// Instead we just re-filter existing data & note the view has changed.
+map.on('moveend', () => {
+  if (liveMonitorRunning) {
+    setThreatStatusLive('Map moved — next refresh will update threats.', '');
+  }
+});
+
+// ── MODE / SCOPE SWITCHING ────────────────────────────────────────────────────
+function setThreatMode(mode) {
+  threatMode = mode;
+  document.getElementById('section-historical').classList.toggle('visible', mode === 'historical');
+  document.getElementById('section-live').classList.toggle('visible', mode === 'live');
+  document.getElementById('tab-historical').classList.toggle('active', mode === 'historical');
+  document.getElementById('tab-live').classList.toggle('active', mode === 'live');
+}
+
+function setScope(scope) {
+  threatScope = scope;
+  document.getElementById('scope-map').classList.toggle('active', scope === 'map');
+  document.getElementById('scope-route').classList.toggle('active', scope === 'route');
+  const note = document.getElementById('threat-scope-note');
+  if (note) note.textContent = scope === 'map'
+    ? 'Searching current map view • Powered by GDELT'
+    : 'Searching within 500 m of plotted routes • Powered by GDELT';
+}
+
+function onFilterChange() {
+  activeFilters.clear();
+  document.querySelectorAll('#threat-filter-grid input[type=checkbox]:checked').forEach(cb => {
+    activeFilters.add(cb.dataset.type);
+  });
+  renderThreatMarkers();
+}
+
+function onLiveFilterChange() {
+  activeLiveFilters.clear();
+  document.querySelectorAll('#threat-filter-grid-live input[type=checkbox]:checked').forEach(cb => {
+    activeLiveFilters.add(cb.dataset.type);
+  });
+  renderThreatMarkers();
+}
+
+// ── PANEL CONTROLS ────────────────────────────────────────────────────────────
+function toggleThreatPanel() {
+  threatPanelOpen = !threatPanelOpen;
+  document.getElementById('threat-panel').classList.toggle('collapsed', !threatPanelOpen);
+  document.getElementById('threat-chevron').textContent = threatPanelOpen ? '▼' : '▲';
+}
+
+function toggleThreatVisibility() {
+  threatVisible = !threatVisible;
+  const btn = document.getElementById('threat-vis-btn');
+  btn.textContent = threatVisible ? 'ON' : 'OFF';
+  btn.classList.toggle('on', threatVisible);
+  document.getElementById('threat-indicator').classList.toggle('live', threatVisible && threatMarkers.length > 0);
+  threatMarkers.forEach(m => { if (threatVisible) m.addTo(map); else m.remove(); });
+}
+
+// ── GDELT QUERY HELPER ────────────────────────────────────────────────────────
+// Queries GDELT DOC API for a given bbox and timespan string (e.g. "30d" or "24h")
+// Returns array of normalised event objects
+async function queryGDELT(bbox, timespan, selectedTypes) {
+  const fetches = selectedTypes.map(async t => {
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc`
+      + `?query=${encodeURIComponent(t.query)}`
+      + `&mode=artlist&timespan=${timespan}&maxrecords=250&format=json`;
+    try {
+      const res  = await fetch(url);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.articles || [])
+        .map(a => ({
+          event_type: t.key,
+          latitude:   parseFloat(a.sourcelat  || ''),
+          longitude:  parseFloat(a.sourcelong || ''),
+          title:      a.title  || '',
+          url:        a.url    || '',
+          event_date: (a.seendate || '').slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'),
+          source:     a.domain || '',
+          location:   a.sourcecountry || '',
+        }))
+        .filter(e => !isNaN(e.latitude) && !isNaN(e.longitude)
+                  && e.latitude  >= bbox.minLat && e.latitude  <= bbox.maxLat
+                  && e.longitude >= bbox.minLng && e.longitude <= bbox.maxLng);
+    } catch { return []; }
+  });
+  const results = await Promise.all(fetches);
+  const all = results.flat();
+  // Deduplicate by URL
+  const seen = new Set();
+  return all.filter(e => { if (seen.has(e.url)) return false; seen.add(e.url); return true; });
+}
+
+function getMapBbox() {
+  const b = map.getBounds();
+  return { minLat: b.getSouth(), maxLat: b.getNorth(), minLng: b.getWest(), maxLng: b.getEast() };
+}
+
+// ── HISTORICAL FETCH ──────────────────────────────────────────────────────────
+async function fetchThreats() {
+  const from = document.getElementById('hist-date-from').value;
+  const to   = document.getElementById('hist-date-to').value;
+  if (!from || !to) { setThreatStatus('Set a date range first.', 'err'); return; }
+
+  if (threatScope === 'route' && !getRoutePoints().length) {
+    setThreatStatus('Plot at least one route for route-proximity search.', 'err'); return;
+  }
+
+  const selectedTypes = THREAT_EVENT_TYPES.filter(t => activeFilters.has(t.key));
+  if (!selectedTypes.length) { setThreatStatus('Select at least one event type.', 'err'); return; }
+
+  // Calculate GDELT timespan from date range (GDELT supports up to ~3 months via timespan)
+  const fromDate = new Date(from), toDate = new Date(to);
+  const days = Math.ceil((toDate - fromDate) / 86400000);
+  const timespan = Math.min(days, 90) + 'd'; // GDELT cap ~90 days
+
+  const btn = document.getElementById('threat-fetch-btn');
+  btn.disabled = true;
+  setThreatStatus(`Searching ${days} days of data…`);
+
+  const bbox = threatScope === 'map' ? getMapBbox() : getRouteBboxBuffered();
+
+  try {
+    const events = await queryGDELT(bbox, timespan, selectedTypes);
+
+    // For route proximity, apply 500m filter
+    threatData = threatScope === 'route'
+      ? events.filter(e => withinRadius(e.latitude, e.longitude, getRoutePoints(), 500))
+      : events;
+
+    updateFilterCounts();
+    renderThreatMarkers();
+
+    const total = threatData.length;
+    setThreatStatus(total === 0
+      ? 'No incidents found in this area and time range.'
+      : `${total} incident${total !== 1 ? 's' : ''} found`, 'ok');
+
+    if (total > 0 && !threatVisible) toggleThreatVisibility();
+    document.getElementById('threat-indicator').classList.toggle('live', threatVisible && total > 0);
+
+  } catch (err) {
+    setThreatStatus(`Error: ${err.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── LIVE MONITOR ──────────────────────────────────────────────────────────────
+function toggleLiveMonitor() {
+  if (liveMonitorRunning) {
+    stopLiveMonitor();
+  } else {
+    startLiveMonitor();
+  }
+}
+
+function startLiveMonitor() {
+  liveMonitorRunning = true;
+  const btn  = document.getElementById('live-start-btn');
+  const badge = document.getElementById('threat-live-badge');
+  btn.textContent = '■ Stop Monitor';
+  btn.classList.add('running');
+  badge.classList.add('active');
+  if (!threatPanelOpen) toggleThreatPanel();
+
+  runLiveFetch(); // immediate first fetch
+  liveIntervalId = setInterval(runLiveFetch, LIVE_INTERVAL_MS);
+  startCountdown();
+}
+
+function stopLiveMonitor() {
+  liveMonitorRunning = false;
+  clearInterval(liveIntervalId);
+  clearInterval(liveCountdownId);
+  liveIntervalId = liveCountdownId = null;
+  document.getElementById('live-start-btn').textContent = '▶ Start Monitor';
+  document.getElementById('live-start-btn').classList.remove('running');
+  document.getElementById('threat-live-badge').classList.remove('active');
+  document.getElementById('live-countdown').textContent = '';
+  setThreatStatusLive('Monitor stopped.', '');
+}
+
+function startCountdown() {
+  liveNextRefresh = Date.now() + LIVE_INTERVAL_MS;
+  clearInterval(liveCountdownId);
+  liveCountdownId = setInterval(() => {
+    const remaining = Math.max(0, liveNextRefresh - Date.now());
+    const m = String(Math.floor(remaining / 60000)).padStart(2, '0');
+    const s = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0');
+    const el = document.getElementById('live-countdown');
+    if (el) el.textContent = `Next: ${m}:${s}`;
+    if (remaining === 0) { liveNextRefresh = Date.now() + LIVE_INTERVAL_MS; }
+  }, 1000);
+}
+
+async function runLiveFetch() {
+  const selectedTypes = THREAT_EVENT_TYPES.filter(t => activeLiveFilters.has(t.key));
+  if (!selectedTypes.length) {
+    setThreatStatusLive('Select at least one event type.', 'err'); return;
+  }
+
+  setThreatStatusLive('Fetching live threats…');
+  liveNextRefresh = Date.now() + LIVE_INTERVAL_MS;
+
+  const bbox = getMapBbox();
+
+  try {
+    const events = await queryGDELT(bbox, '24h', selectedTypes);
+    threatData = events;
+    updateFilterCountsLive();
+    renderThreatMarkers();
+
+    const total = threatData.length;
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setThreatStatusLive(`${total} incident${total !== 1 ? 's' : ''} in view • Updated ${now}`, 'ok');
+
+    if (total > 0 && !threatVisible) toggleThreatVisibility();
+    document.getElementById('threat-indicator').classList.toggle('live', threatVisible && total > 0);
+
+  } catch (err) {
+    setThreatStatusLive(`Error: ${err.message}`, 'err');
+  }
+}
+
+// ── SHARED RENDER ─────────────────────────────────────────────────────────────
+function updateFilterCounts() {
+  THREAT_EVENT_TYPES.forEach(t => {
+    const count = threatData.filter(e => e.event_type === t.key).length;
+    const el = document.getElementById(`threat-filter-grid-fc-${t.key.replace(/[^a-z0-9]/gi,'_')}`);
+    if (el) el.textContent = count > 0 ? count : '';
+  });
+}
+
+function updateFilterCountsLive() {
+  THREAT_EVENT_TYPES.forEach(t => {
+    const count = threatData.filter(e => e.event_type === t.key).length;
+    const el = document.getElementById(`threat-filter-grid-live-fc-${t.key.replace(/[^a-z0-9]/gi,'_')}`);
+    if (el) el.textContent = count > 0 ? count : '';
+  });
+}
+
+function renderThreatMarkers() {
+  threatMarkers.forEach(m => m.remove());
+  threatMarkers = [];
+  const filters = threatMode === 'live' ? activeLiveFilters : activeFilters;
+
+  threatData.filter(e => filters.has(e.event_type)).forEach(e => {
+    const cfg = THREAT_EVENT_TYPES.find(t => t.key === e.event_type) || THREAT_EVENT_TYPES[0];
+    const linkStr = e.url
+      ? `<div class="tp-source"><a href="${escHtml(e.url)}" target="_blank" style="color:var(--csblue);">Read article →</a></div>`
+      : '';
+    const marker = L.circleMarker([+e.latitude, +e.longitude], {
+      radius: 8, color: cfg.colour, fillColor: cfg.colour,
+      fillOpacity: 0.3, weight: 2, opacity: 0.9
+    }).bindPopup(`
+      <div class="tp-inner">
+        <div class="tp-type" style="color:${cfg.colour}">${cfg.icon} ${escHtml(e.event_type)}</div>
+        <div class="tp-sub">${escHtml(e.title)}</div>
+        <div class="tp-location">${escHtml(e.location || '')}</div>
+        <div class="tp-date">${escHtml(e.event_date || '')}</div>
+        ${linkStr}
+        <div class="tp-source" style="color:var(--text-dim);font-size:9px;">${escHtml(e.source)}</div>
+      </div>
+    `, { className: 'threat-popup', maxWidth: 300 });
+    if (threatVisible) marker.addTo(map);
+    threatMarkers.push(marker);
+  });
+}
+
+function setThreatStatus(msg, cls) {
+  const el = document.getElementById('threat-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'threat-status' + (cls ? ` ${cls}` : '');
+}
+
+function setThreatStatusLive(msg, cls) {
+  const el = document.getElementById('threat-status-live');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'threat-status' + (cls ? ` ${cls}` : '');
+}
+
+// ── GEOMETRY HELPERS ──────────────────────────────────────────────────────────
+function haversineM(a, b) {
+  const R = 6371000;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const sinDLat = Math.sin(dLat / 2), sinDLng = Math.sin(dLng / 2);
+  const c = sinDLat * sinDLat + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * sinDLng * sinDLng;
+  return R * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
+}
+
+function getRoutePoints() {
+  const pts = [];
+  Object.values(routes).forEach(r => {
+    if (!r.legPolylines) return;
+    r.legPolylines.forEach(pl => {
+      const lls = pl.getLatLngs();
+      lls.forEach((ll, i) => {
+        pts.push({ lat: ll.lat, lng: ll.lng });
+        if (i < lls.length - 1) {
+          const next = lls[i + 1];
+          const d = haversineM({ lat: ll.lat, lng: ll.lng }, { lat: next.lat, lng: next.lng });
+          const steps = Math.floor(d / 50);
+          for (let s = 1; s < steps; s++) {
+            pts.push({ lat: ll.lat + (next.lat - ll.lat) * s / steps, lng: ll.lng + (next.lng - ll.lng) * s / steps });
+          }
+        }
+      });
+    });
+  });
+  return pts;
+}
+
+function withinRadius(eventLat, eventLng, routePoints, radiusM) {
+  const ep = { lat: +eventLat, lng: +eventLng };
+  return routePoints.some(rp => haversineM(ep, rp) <= radiusM);
+}
+
+function getRouteBboxBuffered() {
+  const pts = getRoutePoints();
+  if (!pts.length) return getMapBbox();
+  const buffer = 0.005;
+  return {
+    minLat: Math.min(...pts.map(p => p.lat)) - buffer,
+    maxLat: Math.max(...pts.map(p => p.lat)) + buffer,
+    minLng: Math.min(...pts.map(p => p.lng)) - buffer,
+    maxLng: Math.max(...pts.map(p => p.lng)) + buffer,
+  };
+}
+
+// ==========================================
+// ========== POLYGON ZONE SYSTEM ===========
+// ==========================================
+
+const ZONE_COLOURS = [
+  '#4fc3d9','#f5a623','#4fbf6f','#c084fc','#e85a4f',
+  '#f97316','#38bdf8','#fb7185','#a3e635','#facc15'
+];
+
+// zones[id] = {
+//   id, name, colour, vertices: [{lat,lng}],
+//   polygonLayer, vertexMarkers, previewPolyline,
+//   threatFilters: Set of event_type keys,
+//   threatMarkers: [], visible: bool
+// }
+let zones = {};
+let zoneIdCounter = 0;
+
+let zoneDrawing = {
+  active: false,
+  id: null,       // zone being drawn
+  vertices: [],   // [{lat,lng}]
+  previewLine: null,    // Leaflet polyline showing in-progress polygon
+  vertexMarkers: [],    // small dot markers for each vertex
+  hoverLine: null       // line from last vertex to mouse
+};
+
+let openZoneColourPicker = null;
+let openZoneThreatMenu   = null;
+
+// Close any open zone dropdowns when clicking elsewhere
+document.addEventListener('click', e => {
+  if (openZoneColourPicker && !e.target.closest('.zone-colour-dot')) {
+    document.querySelectorAll('.zone-colour-popup').forEach(p => p.classList.add('hidden'));
+    openZoneColourPicker = null;
+  }
+  if (openZoneThreatMenu && !e.target.closest('.zone-threat-dropdown')) {
+    document.querySelectorAll('.zone-threat-menu').forEach(m => m.classList.add('hidden'));
+    openZoneThreatMenu = null;
+  }
+});
+
+// ---- Drawing ----
+
+function startZoneDrawing() {
+  if (zoneDrawing.active) { cancelZoneDrawing(); return; }
+  // Cancel other modes
+  if (routeCapture.active) cancelRouteCapture();
+  if (waypointEdit.active) endWaypointEdit();
+  if (addPointMode) toggleAddPoint(false);
+
+  const id = `zone_${++zoneIdCounter}`;
+  const colour = ZONE_COLOURS[(zoneIdCounter - 1) % ZONE_COLOURS.length];
+
+  zones[id] = {
+    id, name: `Zone ${zoneIdCounter}`, colour,
+    vertices: [], polygonLayer: null, vertexMarkers: [],
+    threatFilters: new Set(THREAT_EVENT_TYPES.map(t => t.key)),
+    threatMarkers: [], visible: true
+  };
+
+  zoneDrawing = { active: true, id, vertices: [], previewLine: null, vertexMarkers: [], hoverLine: null };
+
+  map.getContainer().style.cursor = 'crosshair';
+  map.on('mousemove', onZoneMouseMove);
+  map.on('dblclick', onZoneDblClick);
+
+  document.getElementById('btn-new-zone').classList.add('drawing');
+  document.getElementById('btn-new-zone').textContent = '✕ Cancel Drawing';
+  document.getElementById('zone-draw-hint').style.display = 'block';
+
+  showStatus('Zone: click to place vertices — double-click or click first vertex to close', false, true);
+  renderZoneCards();
+}
+
+function cancelZoneDrawing() {
+  if (!zoneDrawing.active) return;
+  // Remove preview elements
+  zoneDrawing.previewLine?.remove();
+  zoneDrawing.hoverLine?.remove();
+  zoneDrawing.vertexMarkers.forEach(m => m.remove());
+  map.off('mousemove', onZoneMouseMove);
+  map.off('dblclick', onZoneDblClick);
+
+  // Remove incomplete zone entry
+  delete zones[zoneDrawing.id];
+  zoneDrawing = { active: false, id: null, vertices: [], previewLine: null, vertexMarkers: [], hoverLine: null };
+
+  map.getContainer().style.cursor = '';
+  document.getElementById('btn-new-zone').classList.remove('drawing');
+  document.getElementById('btn-new-zone').textContent = '+ Draw New Zone';
+  document.getElementById('zone-draw-hint').style.display = 'none';
+  hideStatus();
+  renderZoneCards();
+}
+
+function onZoneClick(ll, e) {
+  // Ignore the synthesised click that fires after a dblclick
+  if (e.originalEvent && e.originalEvent.detail >= 2) return;
+
+  const verts = zoneDrawing.vertices;
+
+  // Snap-to-close: if ≥ 3 vertices and click is near the first vertex, close polygon
+  if (verts.length >= 3) {
+    const firstPx  = map.latLngToContainerPoint(L.latLng(verts[0].lat, verts[0].lng));
+    const clickPx  = map.latLngToContainerPoint(ll);
+    const dx = firstPx.x - clickPx.x, dy = firstPx.y - clickPx.y;
+    if (Math.sqrt(dx*dx + dy*dy) < 14) { closeZonePolygon(); return; }
+  }
+
+  verts.push({ lat: ll.lat, lng: ll.lng });
+
+  // Place a small vertex marker
+  const vm = L.circleMarker([ll.lat, ll.lng], {
+    radius: verts.length === 1 ? 7 : 5,
+    color: zones[zoneDrawing.id].colour,
+    fillColor: verts.length === 1 ? zones[zoneDrawing.id].colour : '#0d1b2a',
+    fillOpacity: verts.length === 1 ? 0.7 : 1,
+    weight: 2
+  }).addTo(map);
+  // First vertex gets a tooltip hint
+  if (verts.length === 1) vm.bindTooltip('Click here to close', { permanent: false, direction: 'top', className: 'leaflet-tooltip' });
+  zoneDrawing.vertexMarkers.push(vm);
+
+  updateZonePreviewLine();
+}
+
+function onZoneDblClick(e) {
+  L.DomEvent.stop(e);
+  if (zoneDrawing.vertices.length >= 3) closeZonePolygon();
+}
+
+function onZoneMouseMove(e) {
+  if (!zoneDrawing.active || !zoneDrawing.vertices.length) return;
+  const last = zoneDrawing.vertices[zoneDrawing.vertices.length - 1];
+  const coords = [[last.lat, last.lng], [e.latlng.lat, e.latlng.lng]];
+  if (zoneDrawing.hoverLine) {
+    zoneDrawing.hoverLine.setLatLngs(coords);
+  } else {
+    zoneDrawing.hoverLine = L.polyline(coords, {
+      color: zones[zoneDrawing.id]?.colour || '#4fc3d9',
+      weight: 2, opacity: 0.5, dashArray: '4,4'
+    }).addTo(map);
+  }
+}
+
+function updateZonePreviewLine() {
+  const verts = zoneDrawing.vertices;
+  if (verts.length < 2) return;
+  const lls = verts.map(v => [v.lat, v.lng]);
+  if (zoneDrawing.previewLine) {
+    zoneDrawing.previewLine.setLatLngs(lls);
+  } else {
+    zoneDrawing.previewLine = L.polyline(lls, {
+      color: zones[zoneDrawing.id]?.colour || '#4fc3d9',
+      weight: 2, opacity: 0.7, dashArray: '6,3'
+    }).addTo(map);
+  }
+}
+
+function closeZonePolygon() {
+  if (!zoneDrawing.active) return;
+  const id = zoneDrawing.id;
+  const verts = [...zoneDrawing.vertices];
+  const colour = zones[id].colour;
+
+  // Clear drawing artefacts
+  zoneDrawing.previewLine?.remove();
+  zoneDrawing.hoverLine?.remove();
+  zoneDrawing.vertexMarkers.forEach(m => m.remove());
+  map.off('mousemove', onZoneMouseMove);
+  map.off('dblclick', onZoneDblClick);
+
+  // Draw finished polygon
+  const lls = verts.map(v => [v.lat, v.lng]);
+  const polygonLayer = L.polygon(lls, {
+    color: colour, weight: 2, opacity: 0.85,
+    fillColor: colour, fillOpacity: 0.1,
+    dashArray: null
+  }).addTo(map);
+
+  polygonLayer.on('click', () => {
+    // Highlight card
+    document.getElementById(`zone-card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  zones[id].vertices    = verts;
+  zones[id].polygonLayer = polygonLayer;
+  zones[id].vertexMarkers = [];
+
+  // Reset drawing state
+  zoneDrawing = { active: false, id: null, vertices: [], previewLine: null, vertexMarkers: [], hoverLine: null };
+  map.getContainer().style.cursor = '';
+  document.getElementById('btn-new-zone').classList.remove('drawing');
+  document.getElementById('btn-new-zone').textContent = '+ Draw New Zone';
+  document.getElementById('zone-draw-hint').style.display = 'none';
+  hideStatus();
+
+  // Apply any cached threat data immediately
+  applyZoneThreats(id);
+  renderZoneCards();
+}
+
+// ---- Point-in-polygon (ray casting) ----
+function pointInPolygon(pt, polygon) {
+  // polygon: [{lat,lng}]
+  let inside = false;
+  const x = pt.lng, y = pt.lat;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].lng, yi = polygon[i].lat;
+    const xj = polygon[j].lng, yj = polygon[j].lat;
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// ---- Threat markers per zone ----
+function applyZoneThreats(id) {
+  const z = zones[id];
+  if (!z || !z.polygonLayer) return;
+
+  // Clear existing zone threat markers
+  z.threatMarkers.forEach(m => m.remove());
+  z.threatMarkers = [];
+
+  if (!threatData.length) return; // nothing fetched yet
+
+  const matching = threatData.filter(e =>
+    z.threatFilters.has(e.event_type) &&
+    pointInPolygon({ lat: +e.latitude, lng: +e.longitude }, z.vertices)
+  );
+
+  matching.forEach(e => {
+    const cfg = THREAT_EVENT_TYPES.find(t => t.key === e.event_type) || THREAT_EVENT_TYPES[0];
+    const fatalStr = (+e.fatalities > 0) ? `<div class="tp-fatalities">⚠ ${e.fatalities} fatalities</div>` : '';
+    const noteStr  = e.notes ? `<div class="tp-notes">${escHtml(e.notes)}</div>` : '';
+
+    const marker = L.circleMarker([+e.latitude, +e.longitude], {
+      radius: 7 + Math.min(+e.fatalities || 0, 5),
+      color: cfg.colour, fillColor: cfg.colour, fillOpacity: 0.25, weight: 2, opacity: 0.9
+    }).bindPopup(`
+      <div class="tp-inner">
+        <div class="tp-type" style="color:${cfg.colour}">${cfg.icon} ${escHtml(e.event_type)}</div>
+        <div class="tp-sub">${escHtml(e.sub_event_type || '')}</div>
+        <div class="tp-location">${escHtml(e.location || '')}</div>
+        <div class="tp-date">${escHtml(e.event_date || '')}</div>
+        ${fatalStr}${noteStr}
+        <div class="tp-source">${escHtml(e.source || '')}</div>
+      </div>
+    `, { className: 'threat-popup', maxWidth: 280 });
+
+    if (z.visible) marker.addTo(map);
+    z.threatMarkers.push(marker);
+  });
+
+  renderZoneCards(); // refresh count
+}
+
+function applyAllZoneThreats() {
+  Object.keys(zones).forEach(id => applyZoneThreats(id));
+}
+
+// ---- Zone visibility ----
+function toggleZoneVisibility(id) {
+  const z = zones[id];
+  if (!z) return;
+  z.visible = !z.visible;
+  if (z.polygonLayer) {
+    if (z.visible) z.polygonLayer.addTo(map);
+    else z.polygonLayer.remove();
+  }
+  z.threatMarkers.forEach(m => z.visible ? m.addTo(map) : m.remove());
+  renderZoneCards();
+}
+
+function deleteZone(id) {
+  const z = zones[id];
+  if (!z) return;
+  z.polygonLayer?.remove();
+  z.threatMarkers.forEach(m => m.remove());
+  z.vertexMarkers?.forEach(m => m.remove());
+  delete zones[id];
+  renderZoneCards();
+}
+
+function setZoneColour(id, colour) {
+  const z = zones[id];
+  if (!z) return;
+  z.colour = colour;
+  if (z.polygonLayer) z.polygonLayer.setStyle({ color: colour, fillColor: colour });
+  document.querySelectorAll('.zone-colour-popup').forEach(p => p.classList.add('hidden'));
+  openZoneColourPicker = null;
+  renderZoneCards();
+}
+
+function fitZone(id) {
+  const z = zones[id];
+  if (!z || !z.polygonLayer) return;
+  map.fitBounds(z.polygonLayer.getBounds(), { padding: [40, 40] });
+}
+
+// ---- Zone colour picker ----
+function toggleZoneColourPicker(id, el) {
+  const popup = document.getElementById(`zcp-${id}`);
+  if (!popup) return;
+  const isOpen = !popup.classList.contains('hidden');
+  document.querySelectorAll('.zone-colour-popup').forEach(p => p.classList.add('hidden'));
+  openZoneColourPicker = null;
+  if (!isOpen) { popup.classList.remove('hidden'); openZoneColourPicker = id; }
+}
+
+// ---- Zone threat type dropdown ----
+function toggleZoneThreatMenu(id) {
+  const menu = document.getElementById(`ztm-${id}`);
+  const trigger = document.getElementById(`ztt-${id}`);
+  if (!menu || !trigger) return;
+  const isOpen = !menu.classList.contains('hidden');
+  document.querySelectorAll('.zone-threat-menu').forEach(m => m.classList.add('hidden'));
+  document.querySelectorAll('.zone-threat-trigger').forEach(t => t.classList.remove('open'));
+  openZoneThreatMenu = null;
+  if (!isOpen) {
+    menu.classList.remove('hidden');
+    trigger.classList.add('open');
+    openZoneThreatMenu = id;
+  }
+}
+
+function onZoneThreatFilterChange(id, eventType, checked) {
+  const z = zones[id];
+  if (!z) return;
+  if (checked) z.threatFilters.add(eventType);
+  else z.threatFilters.delete(eventType);
+  applyZoneThreats(id);
+  updateZoneTriggerText(id);
+}
+
+function updateZoneTriggerText(id) {
+  const z = zones[id];
+  const el = document.getElementById(`ztt-text-${id}`);
+  if (!el || !z) return;
+  const total = THREAT_EVENT_TYPES.length;
+  const active = z.threatFilters.size;
+  el.textContent = active === 0 ? 'None selected' : active === total ? 'All types' : `${active} of ${total} types`;
+}
+
+// ---- Render zone cards ----
+function renderZoneCards() {
+  const container = document.getElementById('zone-cards');
+  if (!container) return;
+  container.innerHTML = '';
+
+  Object.values(zones).forEach(z => {
+    const id = z.id;
+    const hasPolygon = !!z.polygonLayer;
+    const threatCount = z.threatMarkers.length;
+    const activeCount = z.threatFilters.size;
+    const totalTypes  = THREAT_EVENT_TYPES.length;
+    const triggerText = activeCount === 0 ? 'None selected' : activeCount === totalTypes ? 'All types' : `${activeCount} of ${totalTypes} types`;
+
+    // Colour swatches for zone picker
+    const swatchHtml = ZONE_COLOURS.map(c =>
+      `<div class="cp-swatch${c === z.colour ? ' selected' : ''}" style="background:${c}" onclick="setZoneColour('${id}','${c}')"></div>`
+    ).join('');
+
+    // Threat type checkboxes in dropdown
+    const optionsHtml = THREAT_EVENT_TYPES.map(t =>
+      `<label class="zone-threat-option">
+        <input type="checkbox" ${z.threatFilters.has(t.key) ? 'checked' : ''} onchange="onZoneThreatFilterChange('${id}','${escHtml(t.key)}',this.checked)">
+        <div class="zone-threat-option-dot" style="background:${t.colour}"></div>
+        ${t.icon} ${escHtml(t.key)}
+      </label>`
+    ).join('');
+
+    const card = document.createElement('div');
+    card.className = 'zone-card';
+    card.id = `zone-card-${id}`;
+    card.innerHTML = `
+      <div class="zone-card-header">
+        <div class="zone-colour-dot" style="background:${z.colour}" onclick="toggleZoneColourPicker('${id}',this)" title="Change colour">
+          <div class="zone-colour-popup hidden" id="zcp-${id}">${swatchHtml}</div>
+        </div>
+        <input class="zone-name-input" value="${escHtml(z.name)}" placeholder="Zone name" data-zone-id="${id}">
+        ${hasPolygon ? `<span class="zone-vertex-count">${z.vertices.length} pts</span>` : '<span class="zone-vertex-count" style="font-style:italic;color:var(--csblue)">drawing…</span>'}
+      </div>
+      ${hasPolygon ? `
+      <div class="zone-card-body">
+        <div class="zone-threat-label">Show threat types inside zone</div>
+        <div class="zone-threat-dropdown" id="ztd-${id}">
+          <div class="zone-threat-trigger" id="ztt-${id}" onclick="toggleZoneThreatMenu('${id}')">
+            <span class="zone-threat-trigger-text" id="ztt-text-${id}">${escHtml(triggerText)}</span>
+            <span class="zone-threat-trigger-arrow">▼</span>
+          </div>
+          <div class="zone-threat-menu hidden" id="ztm-${id}">${optionsHtml}</div>
+        </div>
+        ${threatData.length === 0
+          ? `<div class="zone-threat-count" style="color:var(--amber);">Fetch threats from the overlay panel first</div>`
+          : `<div class="zone-threat-count">${threatCount} incident${threatCount !== 1 ? 's' : ''} within zone</div>`
+        }
+        <div class="zone-card-actions">
+          <button class="mini-btn" onclick="toggleZoneVisibility('${id}')">${z.visible ? 'Hide' : 'Show'}</button>
+          <button class="mini-btn" onclick="fitZone('${id}')">Fit</button>
+          <button class="mini-btn danger" onclick="deleteZone('${id}')">Delete</button>
+        </div>
+      </div>` : ''}
+    `;
+
+    card.querySelector('.zone-name-input').addEventListener('input', e => {
+      if (zones[id]) zones[id].name = e.target.value;
+    });
+
+    container.appendChild(card);
+  });
+}
+
+// Re-apply zone threats whenever global threat data is refreshed
+// (hook into the end of renderThreatMarkers)
+const _origRenderThreatMarkers = renderThreatMarkers;
+renderThreatMarkers = function() {
+  _origRenderThreatMarkers();
+  applyAllZoneThreats();
+};
+</script>
+</body>
+</html>
