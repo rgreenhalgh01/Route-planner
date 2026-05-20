@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Field — SDR/CS</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --navy:   #0d1b2a;
+    --navy2:  #162233;
+    --navy3:  #1e2f42;
+    --amber:  #f5a623;
+    --danger: #e85a4f;
+    --success:#4fbf6f;
+    --csblue: #4fc3d9;
+    --text:   #e8edf2;
+    --dim:    #8a9bb0;
+    --border: #263548;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Segoe UI', sans-serif; background: var(--navy); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── CALLSIGN SCREEN ── */
+  #callsign-screen {
+    position: fixed; inset: 0; z-index: 9999;
+    background: var(--navy);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px 24px; gap: 0;
+  }
+  #callsign-screen.hidden { display: none; }
+  .cs-logo { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: var(--amber); text-transform: uppercase; margin-bottom: 40px; }
+  .cs-logo span { color: var(--dim); }
+  .cs-title { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 6px; text-align: center; }
+  .cs-sub { font-size: 13px; color: var(--dim); text-align: center; margin-bottom: 32px; line-height: 1.5; }
+  .cs-input {
+    width: 100%; max-width: 320px; background: var(--navy3); border: 1px solid var(--border);
+    color: var(--text); padding: 14px 16px; border-radius: 8px; font-size: 18px;
+    font-weight: 600; text-align: center; letter-spacing: 2px; text-transform: uppercase;
+    outline: none; margin-bottom: 16px;
+  }
+  .cs-input:focus { border-color: var(--amber); }
+  .cs-input::placeholder { color: var(--dim); letter-spacing: 1px; font-weight: 400; text-transform: none; font-size: 14px; }
+  .cs-btn {
+    width: 100%; max-width: 320px; background: var(--amber); color: var(--navy);
+    border: none; padding: 14px; border-radius: 8px; font-size: 14px;
+    font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .cs-btn:active { opacity: 0.8; }
+  .cs-note { font-size: 11px; color: var(--dim); text-align: center; margin-top: 20px; line-height: 1.6; max-width: 280px; }
+
+  /* ── MAIN APP ── */
+  #app { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #app.hidden { display: none; }
+
+  /* Header */
+  .field-header {
+    background: var(--navy2); border-bottom: 1px solid var(--border);
+    padding: 0 14px; height: 48px; display: flex; align-items: center;
+    justify-content: space-between; flex-shrink: 0; z-index: 500;
+  }
+  .field-callsign { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--amber); text-transform: uppercase; }
+  .field-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+  .field-status-dot.gps { background: var(--success); animation: pulse-gps 2s ease-in-out infinite; }
+  .field-status-dot.err { background: var(--danger); }
+  @keyframes pulse-gps { 0%,100%{box-shadow:0 0 0 0 rgba(79,191,111,0.5)} 50%{box-shadow:0 0 0 6px rgba(79,191,111,0)} }
+  .field-gps-info { font-size: 10px; color: var(--dim); text-align: right; line-height: 1.4; }
+
+  /* Map */
+  #field-map { flex: 1; min-height: 0; }
+
+  /* Bottom action bar */
+  .field-action-bar {
+    background: var(--navy2); border-top: 1px solid var(--border);
+    padding: 10px 12px; display: flex; gap: 8px; flex-shrink: 0;
+  }
+  .fab-btn {
+    flex: 1; padding: 12px 8px; border-radius: 8px; border: none;
+    font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    cursor: pointer; transition: opacity 0.15s; display: flex; flex-direction: column;
+    align-items: center; gap: 4px;
+  }
+  .fab-btn:active { opacity: 0.7; }
+  .fab-btn .fab-icon { font-size: 20px; }
+  .fab-report { background: var(--danger); color: white; }
+  .fab-threats { background: var(--navy3); color: var(--csblue); border: 1px solid var(--csblue); }
+  .fab-threats.active { background: rgba(79,195,217,0.15); }
+  .fab-locate { background: var(--navy3); color: var(--amber); border: 1px solid var(--amber); }
+
+  /* ── INCIDENT REPORT MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 8000;
+    display: flex; align-items: flex-end; padding: 0;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal-sheet {
+    background: var(--navy2); border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--border); width: 100%;
+    padding: 20px 16px 32px; max-height: 85vh; overflow-y: auto;
+  }
+  .modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 20px; }
+  .modal-title { font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text); margin-bottom: 16px; }
+  .modal-label { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); margin-bottom: 6px; margin-top: 14px; }
+  .incident-types { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+  .inc-type-btn {
+    padding: 10px 8px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--navy3); color: var(--text); font-size: 11px; font-weight: 600;
+    cursor: pointer; text-align: center; transition: all 0.15s;
+  }
+  .inc-type-btn.selected { border-color: var(--amber); background: rgba(245,166,35,0.1); color: var(--amber); }
+  .inc-notes {
+    width: 100%; background: var(--navy3); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 12px; border-radius: 6px; font-size: 13px;
+    outline: none; resize: none; font-family: inherit; margin-top: 4px;
+  }
+  .inc-notes:focus { border-color: var(--amber); }
+  .inc-loc-note { font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .modal-submit {
+    width: 100%; margin-top: 20px; padding: 14px; border-radius: 8px; border: none;
+    background: var(--danger); color: white; font-size: 13px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: opacity 0.15s;
+  }
+  .modal-submit:active { opacity: 0.8; }
+  .modal-cancel-btn {
+    width: 100%; margin-top: 8px; padding: 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent; color: var(--dim);
+    font-size: 12px; cursor: pointer;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+    background: var(--navy3); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 20px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    z-index: 9000; opacity: 0; transition: opacity 0.3s; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+  .toast.ok { border-color: var(--success); color: var(--success); }
+  .toast.err { border-color: var(--danger); color: var(--danger); }
+
+  /* Leaflet overrides */
+  .leaflet-container { background: #0d1b2a; }
+  .own-location-marker { width: 20px; height: 20px; border-radius: 50%; background: var(--csblue); border: 3px solid white; box-shadow: 0 0 0 4px rgba(79,195,217,0.3); animation: pulse-gps 2s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<!-- CALLSIGN SCREEN -->
+<div id="callsign-screen">
+  <div class="cs-logo">SDR<span>/</span>CS <span>Field</span></div>
+  <div class="cs-title">Enter Your Callsign</div>
+  <div class="cs-sub">This identifies you on the command map.<br>Use your assigned callsign or name.</div>
+  <input class="cs-input" id="callsign-input" placeholder="e.g. ALPHA-1" maxlength="16" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+  <button class="cs-btn" onclick="startApp()">Go Operational</button>
+  <div class="cs-note">Your location will be shared with the command map while this app is open. Close the browser tab to stop sharing.</div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="hidden">
+  <div class="field-header">
+    <div>
+      <div class="field-callsign" id="display-callsign">—</div>
+      <div class="field-gps-info" id="gps-info">Acquiring GPS…</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="field-status-dot" id="gps-dot"></div>
+    </div>
+  </div>
+
+  <div id="field-map"></div>
+
+  <div class="field-action-bar">
+    <button class="fab-btn fab-report" onclick="openReport()">
+      <span class="fab-icon">🚨</span>Report
+    </button>
+    <button class="fab-btn fab-threats" id="threats-btn" onclick="toggleThreats()">
+      <span class="fab-icon">⚠️</span>Threats
+    </button>
+    <button class="fab-btn fab-locate" onclick="centreOnMe()">
+      <span class="fab-icon">📍</span>My Location
+    </button>
+  </div>
+</div>
+
+<!-- INCIDENT REPORT MODAL -->
+<div class="modal-overlay hidden" id="report-modal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Report Incident</div>
+    <div class="modal-label">Incident Type</div>
+    <div class="incident-types" id="inc-type-grid"></div>
+    <div class="modal-label">Notes (optional)</div>
+    <textarea class="inc-notes" id="inc-notes" rows="3" placeholder="Brief description…"></textarea>
+    <div class="inc-loc-note" id="inc-loc-note">📍 Will use your current GPS location</div>
+    <button class="modal-submit" onclick="submitReport()">Submit Report</button>
+    <button class="modal-cancel-btn" onclick="closeReport()">Cancel</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://hjtyibxsufzufjvwytkg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqdHlpYnhzdWZ6dWZqdnd5dGtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyOTQ3MDEsImV4cCI6MjA5NDg3MDcwMX0.Egj4tcWLIMZfcFvo2xudBOStgXuJRWwZfMYuStPw04A';
+const LOCATION_INTERVAL_MS = 30000; // 30s
+
+const INCIDENT_TYPES = [
+  { key: 'Surveillance',    icon: '👁️' },
+  { key: 'Hostile Follow',  icon: '🚶' },
+  { key: 'Threat/Weapon',   icon: '🔫' },
+  { key: 'Crowd/Unrest',    icon: '🔥' },
+  { key: 'Suspicious Item', icon: '📦' },
+  { key: 'Vehicle Threat',  icon: '🚗' },
+  { key: 'Medical',         icon: '🏥' },
+  { key: 'Other',           icon: '📌' },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let callsign       = '';
+let fieldMap       = null;
+let ownMarker      = null;
+let currentPos     = null;
+let locationTimer  = null;
+let threatsVisible = false;
+let threatMarkers  = [];
+let selectedType   = null;
+
+// ── CALLSIGN ──────────────────────────────────────────────────────────────────
+document.getElementById('callsign-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startApp();
+});
+
+function startApp() {
+  const val = document.getElementById('callsign-input').value.trim().toUpperCase();
+  if (!val) { showToast('Enter a callsign first', 'err'); return; }
+  callsign = val;
+  document.getElementById('callsign-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('display-callsign').textContent = callsign;
+  initMap();
+  initIncidentTypes();
+  startGPS();
+}
+
+// ── MAP INIT ──────────────────────────────────────────────────────────────────
+function initMap() {
+  fieldMap = L.map('field-map', { zoomControl: false, attributionControl: false })
+    .setView([51.5074, -0.1278], 15);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(fieldMap);
+  L.control.zoom({ position: 'topright' }).addTo(fieldMap);
+}
+
+// ── GPS ───────────────────────────────────────────────────────────────────────
+function startGPS() {
+  if (!navigator.geolocation) {
+    showToast('GPS not available on this device', 'err');
+    document.getElementById('gps-dot').classList.add('err');
+    return;
+  }
+  navigator.geolocation.watchPosition(onPosition, onGPSError, {
+    enableHighAccuracy: true, maximumAge: 15000, timeout: 20000
+  });
+}
+
+function onPosition(pos) {
+  currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+  const dot = document.getElementById('gps-dot');
+  dot.classList.remove('err'); dot.classList.add('gps');
+  document.getElementById('gps-info').textContent =
+    `±${Math.round(currentPos.accuracy)}m accuracy`;
+
+  // Place / move own marker
+  const ll = [currentPos.lat, currentPos.lng];
+  if (!ownMarker) {
+    const icon = L.divIcon({ className: '', html: '<div class="own-location-marker"></div>', iconSize: [20,20], iconAnchor: [10,10] });
+    ownMarker = L.marker(ll, { icon, zIndexOffset: 1000 }).addTo(fieldMap);
+    fieldMap.setView(ll, 16);
+  } else {
+    ownMarker.setLatLng(ll);
+  }
+
+  // Push to Supabase immediately, then schedule
+  pushLocation();
+  if (!locationTimer) {
+    locationTimer = setInterval(pushLocation, LOCATION_INTERVAL_MS);
+  }
+}
+
+function onGPSError(err) {
+  document.getElementById('gps-dot').classList.add('err');
+  document.getElementById('gps-info').textContent = 'GPS error — check permissions';
+}
+
+// ── SUPABASE HELPERS ──────────────────────────────────────────────────────────
+async function sbUpsert(table, data) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+}
+
+async function sbInsert(table, data) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+    },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+}
+
+// ── LOCATION PUSH ─────────────────────────────────────────────────────────────
+async function pushLocation() {
+  if (!currentPos) return;
+  try {
+    await sbUpsert('operatives', {
+      callsign:   callsign,
+      lat:        currentPos.lat,
+      lng:        currentPos.lng,
+      accuracy:   currentPos.accuracy,
+      status:     'active',
+      updated_at: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn('Location push failed:', e.message);
+  }
+}
+
+// Mark operative as inactive when page unloads
+window.addEventListener('beforeunload', async () => {
+  if (!callsign) return;
+  try {
+    await sbUpsert('operatives', { callsign, lat: currentPos?.lat, lng: currentPos?.lng, status: 'inactive', updated_at: new Date().toISOString() });
+  } catch {}
+});
+
+// ── CENTRE ON ME ──────────────────────────────────────────────────────────────
+function centreOnMe() {
+  if (currentPos) fieldMap.setView([currentPos.lat, currentPos.lng], 16);
+  else showToast('GPS not yet acquired', 'err');
+}
+
+// ── THREATS ───────────────────────────────────────────────────────────────────
+const THREAT_TYPES = [
+  { key: 'Armed Conflict',     colour: '#e85a4f', icon: '⚔️',  query: 'attack OR battle OR gunfire OR armed clash' },
+  { key: 'Explosion/Bombing',  colour: '#f97316', icon: '💥',  query: 'explosion OR bomb OR blast OR IED' },
+  { key: 'Violence/Assault',   colour: '#c084fc', icon: '🎯',  query: 'shooting OR stabbing OR assault OR kidnapping' },
+  { key: 'Riots/Civil Unrest', colour: '#facc15', icon: '🔥',  query: 'riot OR looting OR violent protest OR civil unrest' },
+  { key: 'Protests',           colour: '#38bdf8', icon: '✊',  query: 'protest OR demonstration OR march OR rally' },
+  { key: 'Security Incident',  colour: '#8a9bb0', icon: '📌',  query: 'security incident OR terror OR threat OR arrest' },
+];
+
+async function toggleThreats() {
+  const btn = document.getElementById('threats-btn');
+  if (threatsVisible) {
+    threatMarkers.forEach(m => m.remove());
+    threatMarkers = [];
+    threatsVisible = false;
+    btn.classList.remove('active');
+    showToast('Threats hidden');
+  } else {
+    btn.classList.add('active');
+    showToast('Loading threats…');
+    await fetchFieldThreats();
+    threatsVisible = true;
+  }
+}
+
+async function fetchFieldThreats() {
+  const b = fieldMap.getBounds();
+  const bbox = { minLat: b.getSouth(), maxLat: b.getNorth(), minLng: b.getWest(), maxLng: b.getEast() };
+  threatMarkers.forEach(m => m.remove());
+  threatMarkers = [];
+
+  const fetches = THREAT_TYPES.map(async t => {
+    const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(t.query)}&mode=artlist&timespan=7d&maxrecords=100&format=json`;
+    try {
+      const res  = await fetch(url);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.articles || []).map(a => ({
+        type: t.key, colour: t.colour, icon: t.icon,
+        lat: parseFloat(a.sourcelat || ''), lng: parseFloat(a.sourcelong || ''),
+        title: a.title || '', url: a.url || '', source: a.domain || '',
+        date: (a.seendate || '').slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'),
+      })).filter(e => !isNaN(e.lat) && !isNaN(e.lng)
+        && e.lat >= bbox.minLat && e.lat <= bbox.maxLat
+        && e.lng >= bbox.minLng && e.lng <= bbox.maxLng);
+    } catch { return []; }
+  });
+
+  const results = (await Promise.all(fetches)).flat();
+  const seen = new Set();
+  results.filter(e => { if (seen.has(e.url)) return false; seen.add(e.url); return true; })
+    .forEach(e => {
+      const m = L.circleMarker([e.lat, e.lng], {
+        radius: 7, color: e.colour, fillColor: e.colour, fillOpacity: 0.3, weight: 2
+      }).bindPopup(`<b style="color:${e.colour}">${e.icon} ${e.type}</b><br><small>${e.title}</small><br><small style="color:#8a9bb0">${e.date} · ${e.source}</small>`);
+      m.addTo(fieldMap);
+      threatMarkers.push(m);
+    });
+
+  showToast(`${threatMarkers.length} threats loaded`, threatMarkers.length > 0 ? 'ok' : '');
+}
+
+// ── INCIDENT REPORT ───────────────────────────────────────────────────────────
+function initIncidentTypes() {
+  const grid = document.getElementById('inc-type-grid');
+  INCIDENT_TYPES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'inc-type-btn';
+    btn.dataset.key = t.key;
+    btn.innerHTML = `${t.icon}<br>${t.key}`;
+    btn.onclick = () => selectIncType(t.key);
+    grid.appendChild(btn);
+  });
+}
+
+function selectIncType(key) {
+  selectedType = key;
+  document.querySelectorAll('.inc-type-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.key === key);
+  });
+}
+
+function openReport() {
+  selectedType = null;
+  document.querySelectorAll('.inc-type-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('inc-notes').value = '';
+  const locNote = document.getElementById('inc-loc-note');
+  locNote.textContent = currentPos
+    ? `📍 ${currentPos.lat.toFixed(5)}, ${currentPos.lng.toFixed(5)}`
+    : '⚠️ No GPS — report will have no location';
+  document.getElementById('report-modal').classList.remove('hidden');
+}
+
+function closeReport() {
+  document.getElementById('report-modal').classList.add('hidden');
+}
+
+async function submitReport() {
+  if (!selectedType) { showToast('Select an incident type', 'err'); return; }
+  const notes = document.getElementById('inc-notes').value.trim();
+  try {
+    await sbInsert('incidents', {
+      callsign,
+      type:       selectedType,
+      notes:      notes || null,
+      lat:        currentPos?.lat || null,
+      lng:        currentPos?.lng || null,
+      created_at: new Date().toISOString()
+    });
+    closeReport();
+    showToast('Incident reported ✓', 'ok');
+  } catch (e) {
+    showToast('Failed to submit — check connection', 'err');
+  }
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, cls = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show${cls ? ' ' + cls : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>
